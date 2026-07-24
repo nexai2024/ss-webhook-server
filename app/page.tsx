@@ -2,6 +2,7 @@
 
 import clsx from "clsx";
 import { useFormStatus } from "react-dom";
+import { useUser, SignInButton, SignUpButton } from "@clerk/nextjs";
 import {
   createWebhook,
   getWebhooks,
@@ -9,6 +10,7 @@ import {
   deleteWebhook,
   clearWebhookLogs,
   getDashboardAnalytics,
+  getUserTier,
   type WebhookDefinition,
   type WebhookRequestLog
 } from "./lib/actions";
@@ -18,7 +20,6 @@ import {
   Terminal,
   Plus,
   Trash2,
-  ExternalLink,
   Copy,
   RefreshCw,
   CheckCircle,
@@ -33,10 +34,15 @@ import {
   Bell,
   Mail,
   Zap,
-  Globe
+  Globe,
+  ArrowRight,
+  Sparkles,
+  Lock
 } from "lucide-react";
+import Link from "next/link";
 
 export default function Page() {
+  const { isSignedIn, isLoaded, user } = useUser();
   const [state, dispatch] = React.useActionState(createWebhook, undefined);
   const [webhooks, setWebhooks] = React.useState<WebhookDefinition[]>([]);
   const [selectedSlug, setSelectedSlug] = React.useState<string>("");
@@ -46,6 +52,11 @@ export default function Page() {
     totalLogs: 0,
     errors: 0,
     successes: 0,
+  });
+  const [tierInfo, setTierInfo] = React.useState({
+    isPremium: false,
+    activePlan: "Free Plan",
+    endpointsCount: 0,
   });
   const [loading, setLoading] = React.useState(true);
   const [loadingLogs, setLoadingLogs] = React.useState(false);
@@ -61,14 +72,17 @@ export default function Page() {
 
   // Fetch all endpoints and summary stats
   const fetchDashboardData = React.useCallback(async () => {
+    if (!isSignedIn) return;
     setLoading(true);
     try {
-      const [allWebhooks, stats] = await Promise.all([
+      const [allWebhooks, stats, tier] = await Promise.all([
         getWebhooks(),
-        getDashboardAnalytics()
+        getDashboardAnalytics(),
+        getUserTier()
       ]);
       setWebhooks(allWebhooks);
       setAnalytics(stats);
+      setTierInfo(tier);
 
       // Default select the first webhook if none selected
       if (allWebhooks.length > 0 && !selectedSlug) {
@@ -80,11 +94,11 @@ export default function Page() {
     } finally {
       setLoading(false);
     }
-  }, [selectedSlug]);
+  }, [selectedSlug, isSignedIn]);
 
   // Load request logs for the selected webhook
   const fetchLogs = React.useCallback(async (slug: string) => {
-    if (!slug) return;
+    if (!slug || !isSignedIn) return;
     setLoadingLogs(true);
     try {
       const logList = await getWebhookLogs(slug);
@@ -95,19 +109,21 @@ export default function Page() {
     } finally {
       setLoadingLogs(false);
     }
-  }, []);
+  }, [isSignedIn]);
 
   React.useEffect(() => {
-    fetchDashboardData();
-  }, [fetchDashboardData]);
+    if (isSignedIn) {
+      fetchDashboardData();
+    }
+  }, [fetchDashboardData, isSignedIn]);
 
   React.useEffect(() => {
-    if (selectedSlug) {
+    if (selectedSlug && isSignedIn) {
       fetchLogs(selectedSlug);
     } else {
       setLogs([]);
     }
-  }, [selectedSlug, fetchLogs]);
+  }, [selectedSlug, fetchLogs, isSignedIn]);
 
   // Listen to creation action updates
   React.useEffect(() => {
@@ -151,6 +167,7 @@ export default function Page() {
         setTimeout(() => {
           fetchLogs(selectedSlug);
           getDashboardAnalytics().then((stats) => setAnalytics(stats));
+          getUserTier().then((tier) => setTierInfo(tier));
         }, 1000);
 
         return `Triggered successfully with Status: ${response.status}. Payload: ${text.substring(0, 50)}`;
@@ -198,34 +215,121 @@ export default function Page() {
 
   const selectedWebhook = webhooks.find((w) => w.slug === selectedSlug);
 
+  // Render Loader during Clerk auth verification
+  if (!isLoaded) {
+    return (
+      <div className="bg-slate-950 min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center text-slate-100 font-sans">
+        <RefreshCw className="h-10 w-10 animate-spin text-indigo-500 mb-4" />
+        <p className="text-slate-400 text-sm animate-pulse">Loading workspace session...</p>
+      </div>
+    );
+  }
+
+  // Render Signed Out Landing Page
+  if (!isSignedIn) {
+    return (
+      <div className="bg-slate-950 text-slate-100 min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center py-16 px-4 sm:px-6 lg:px-8 font-sans">
+        <div className="max-w-4xl text-center space-y-8">
+          <div className="inline-flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/30 px-3.5 py-1.5 rounded-full text-indigo-400 text-xs font-semibold uppercase tracking-wider">
+            <Sparkles className="h-4 w-4" /> New: Integrated clerk subscriptions & billing
+          </div>
+
+          <h1 className="text-5xl sm:text-6xl font-extrabold tracking-tight leading-none bg-gradient-to-r from-indigo-400 via-sky-400 to-emerald-400 bg-clip-text text-transparent">
+            Next-Gen Dynamic Webhook Platform
+          </h1>
+
+          <p className="text-lg text-slate-400 max-w-2xl mx-auto font-medium">
+            Define fully custom, secure webhook response mock payloads on the fly. Store incoming HTTP headers, queries, and bodies in MongoDB, and receive beautiful React Email notifications via Resend.
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+            <SignUpButton mode="modal">
+              <button type="button" className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3.5 text-sm font-semibold text-white shadow-xl shadow-indigo-600/20 hover:bg-indigo-500 hover:scale-105 transition-all cursor-pointer">
+                Get Started for Free <ArrowRight className="h-4 w-4" />
+              </button>
+            </SignUpButton>
+            <Link href="/pricing" className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl bg-slate-900 border border-slate-800 px-6 py-3.5 text-sm font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer">
+              View Pricing Tiers
+            </Link>
+          </div>
+
+          {/* Value props showcase */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-12 text-left">
+            <div className="bg-slate-900/50 border border-slate-900 p-6 rounded-2xl space-y-3 shadow-lg">
+              <span className="p-2.5 bg-indigo-600/10 text-indigo-400 rounded-xl inline-block border border-indigo-500/10">
+                <Globe className="h-5 w-5" />
+              </span>
+              <h3 className="font-bold text-white">Custom Routing</h3>
+              <p className="text-xs text-slate-400">
+                Choose GET, POST, PUT, DELETE, or ALL methods. Configure your own custom content types and return codes.
+              </p>
+            </div>
+
+            <div className="bg-slate-900/50 border border-slate-900 p-6 rounded-2xl space-y-3 shadow-lg">
+              <span className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl inline-block border border-emerald-500/10">
+                <Database className="h-5 w-5" />
+              </span>
+              <h3 className="font-bold text-white">MongoDB Inspector</h3>
+              <p className="text-xs text-slate-400">
+                Every webhook call records detailed logs. Review client IP addresses, timestamps, headers, queries, and payload bodies.
+              </p>
+            </div>
+
+            <div className="bg-slate-900/50 border border-slate-900 p-6 rounded-2xl space-y-3 shadow-lg">
+              <span className="p-2.5 bg-amber-500/10 text-amber-400 rounded-xl inline-block border border-amber-500/10">
+                <Mail className="h-5 w-5" />
+              </span>
+              <h3 className="font-bold text-white">Resend Email Alerts</h3>
+              <p className="text-xs text-slate-400">
+                Automatically dispatch elegant React Email summaries directly to your developer inbox on webhook execution.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Render Signed In Workspace Dashboard
   return (
-    <div className="bg-slate-950 text-slate-100 min-h-screen py-8 px-4 sm:px-6 lg:px-8 font-sans">
+    <div className="bg-slate-950 text-slate-100 min-h-[calc(100vh-4rem)] py-8 px-4 sm:px-6 lg:px-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-8">
 
-        {/* Header section */}
+        {/* Header section with User and Subscription badge */}
         <header className="flex flex-col md:flex-row md:items-center md:justify-between pb-6 border-b border-slate-900 gap-4">
-          <div>
-            <div className="flex items-center gap-3">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-3">
               <span className="p-2.5 bg-indigo-600/20 text-indigo-400 rounded-xl border border-indigo-500/30">
                 <Terminal className="h-6 w-6" />
               </span>
               <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-400 via-sky-400 to-emerald-400 bg-clip-text text-transparent">
                 Dynamic Endpoint Hub
               </h1>
+              {/* Subscription Plan Badge */}
+              <span className={clsx(
+                "text-xs px-3 py-1 rounded-full font-bold uppercase tracking-wider border",
+                tierInfo.isPremium
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                  : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+              )}>
+                {tierInfo.activePlan}
+              </span>
             </div>
-            <p className="mt-2 text-sm text-slate-400">
-              Create dynamic, fully customizable Webhook endpoints on the fly. Define responses, log parameters in MongoDB, and optionally send React Email alerts with Resend.
+            <p className="text-sm text-slate-400">
+              Welcome back, <span className="text-white font-semibold">{user?.firstName || "Developer"}</span>. Manage your dynamic webhook endpoints below.
             </p>
           </div>
 
-          <button
-            onClick={fetchDashboardData}
-            disabled={loading}
-            className="self-start md:self-center inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-slate-300 bg-slate-900 border border-slate-800 rounded-lg hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors"
-          >
-            <RefreshCw className={clsx("h-4 w-4", loading && "animate-spin")} />
-            Refresh Hub
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={fetchDashboardData}
+              disabled={loading}
+              className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-slate-300 bg-slate-900 border border-slate-800 rounded-lg hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors"
+            >
+              <RefreshCw className={clsx("h-4 w-4", loading && "animate-spin")} />
+              Refresh Hub
+            </button>
+          </div>
         </header>
 
         {/* Dashboard Analytics summary counters */}
@@ -236,7 +340,9 @@ export default function Page() {
             </div>
             <div>
               <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">Endpoints</p>
-              <h3 className="text-2xl font-bold mt-1 text-white">{analytics.totalEndpoints}</h3>
+              <h3 className="text-2xl font-bold mt-1 text-white">
+                {analytics.totalEndpoints} <span className="text-xs font-normal text-slate-500">/ {tierInfo.isPremium ? "∞" : "2"}</span>
+              </h3>
             </div>
           </div>
 
@@ -341,9 +447,16 @@ export default function Page() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label htmlFor="status" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
-                    Response Status
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="status" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                      Response Status
+                    </label>
+                    {!tierInfo.isPremium && (
+                      <span className="text-[10px] text-amber-500 font-semibold flex items-center gap-1">
+                        <Lock className="h-2.5 w-2.5" /> Premium Statuses
+                      </span>
+                    )}
+                  </div>
                   <select
                     id="status"
                     name="status"
@@ -353,11 +466,11 @@ export default function Page() {
                     <option value="200">200 OK</option>
                     <option value="201">201 Created</option>
                     <option value="204">204 No Content</option>
-                    <option value="400">400 Bad Request</option>
-                    <option value="401">401 Unauthorized</option>
-                    <option value="403">403 Forbidden</option>
-                    <option value="404">404 Not Found</option>
-                    <option value="500">500 Server Error</option>
+                    <option value="400">400 Bad Request {!tierInfo.isPremium && "🔑"}</option>
+                    <option value="401">401 Unauthorized {!tierInfo.isPremium && "🔑"}</option>
+                    <option value="403">403 Forbidden {!tierInfo.isPremium && "🔑"}</option>
+                    <option value="404">404 Not Found {!tierInfo.isPremium && "🔑"}</option>
+                    <option value="500">500 Server Error {!tierInfo.isPremium && "🔑"}</option>
                   </select>
                 </div>
               </div>
@@ -397,10 +510,17 @@ export default function Page() {
               </div>
 
               {/* Alert Notification Email */}
-              <div className="space-y-1.5 bg-slate-950/40 p-3 rounded-lg border border-slate-800">
-                <div className="flex items-center gap-2 mb-2 text-indigo-400">
-                  <Bell className="h-4 w-4" />
-                  <span className="text-xs font-bold uppercase tracking-wider">Instant Email Alerts</span>
+              <div className="space-y-1.5 bg-slate-950/40 p-3 rounded-lg border border-slate-800 relative">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2 text-indigo-400">
+                    <Bell className="h-4 w-4" />
+                    <span className="text-xs font-bold uppercase tracking-wider">Instant Email Alerts</span>
+                  </div>
+                  {!tierInfo.isPremium && (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 font-bold">
+                      <Lock className="h-2.5 w-2.5" /> Premium
+                    </span>
+                  )}
                 </div>
                 <label htmlFor="notifyEmail" className="block text-[11px] text-slate-400">
                   Receive a detailed request breakdown to your email using Resend and React Email.
@@ -413,8 +533,12 @@ export default function Page() {
                     id="notifyEmail"
                     name="notifyEmail"
                     type="email"
-                    placeholder="developer@example.com (optional)"
-                    className="block w-full rounded-lg border border-slate-800 bg-slate-950 pl-9 pr-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none"
+                    disabled={!tierInfo.isPremium}
+                    placeholder={tierInfo.isPremium ? "developer@example.com" : "Upgrade to Premium to enable"}
+                    className={clsx(
+                      "block w-full rounded-lg border border-slate-800 bg-slate-950 pl-9 pr-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none",
+                      !tierInfo.isPremium && "opacity-50 cursor-not-allowed"
+                    )}
                   />
                 </div>
               </div>
@@ -429,7 +553,7 @@ export default function Page() {
           <section className="lg:col-span-7 space-y-6">
 
             {/* Endpoints Roster list */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl font-sans">
               <h2 className="text-md font-bold text-white flex items-center gap-2 mb-4">
                 <Zap className="h-5 w-5 text-amber-400" />
                 Active Custom Endpoints ({webhooks.length})
@@ -447,7 +571,7 @@ export default function Page() {
                   <p className="text-xs text-slate-500 mt-1">Define your first webhook on the left to start receiving webhooks!</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-3 max-h-[300px] overflow-y-auto">
+                <div className="grid grid-cols-1 gap-3 max-h-[300px] overflow-y-auto font-sans">
                   {webhooks.map((wh) => {
                     const isSelected = selectedSlug === wh.slug;
                     return (
@@ -480,7 +604,7 @@ export default function Page() {
                                 e.stopPropagation();
                                 copyToClipboard(`${origin}/api/webhooks/${wh.slug}`);
                               }}
-                              className="text-slate-500 hover:text-white p-1"
+                              className="text-slate-500 hover:text-white p-1 hover:scale-110 transition-transform"
                               title="Copy Full URL"
                             >
                               <Copy className="h-3 w-3" />
@@ -492,7 +616,7 @@ export default function Page() {
                           {isSelected && (
                             <span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse" />
                           )}
-                          <span className="text-[11px] bg-slate-950 px-2 py-1 rounded text-slate-400 border border-slate-800 font-bold">
+                          <span className="text-[11px] bg-slate-950 px-2 py-1 rounded text-slate-400 border border-slate-800 font-bold font-mono">
                             Returns {wh.status}
                           </span>
                           <button
@@ -515,7 +639,7 @@ export default function Page() {
 
             {/* Selected Webhook Log Inspector Console */}
             {selectedWebhook ? (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden font-sans">
                 <div className="p-6 border-b border-slate-800 bg-slate-900/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
                     <h2 className="text-md font-bold text-white flex items-center gap-2">
@@ -530,7 +654,7 @@ export default function Page() {
                   <div className="flex items-center gap-2.5 self-start sm:self-center">
                     <button
                       onClick={handleTestWebhook}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-all"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-all cursor-pointer"
                       title="Simulate Request"
                     >
                       <Play className="h-3 w-3" />
@@ -538,7 +662,7 @@ export default function Page() {
                     </button>
                     <button
                       onClick={() => handleClearLogs(selectedWebhook.slug)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-lg hover:bg-rose-500/20 transition-all"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-lg hover:bg-rose-500/20 transition-all cursor-pointer"
                     >
                       Clear Logs
                     </button>
@@ -581,7 +705,7 @@ export default function Page() {
                                 )}>
                                   {lg.method}
                                 </span>
-                                <div className="text-xs">
+                                <div className="text-xs font-sans">
                                   <span className="font-semibold text-slate-300">{lg.clientIp}</span>
                                   <span className="text-slate-500 mx-2">•</span>
                                   <span className="text-slate-400">{new Date(lg.timestamp).toLocaleString()}</span>
@@ -608,8 +732,8 @@ export default function Page() {
                                 {/* Query parameters */}
                                 {Object.keys(lg.query).length > 0 && (
                                   <div>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Query Params</p>
-                                    <pre className="bg-slate-900/80 p-3 rounded border border-slate-800 text-slate-300 overflow-x-auto text-[11px]">
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 font-sans">Query Params</p>
+                                    <pre className="bg-slate-900/80 p-3 rounded border border-slate-800 text-slate-300 overflow-x-auto text-[11px] font-mono">
                                       {JSON.stringify(lg.query, null, 2)}
                                     </pre>
                                   </div>
@@ -617,16 +741,16 @@ export default function Page() {
 
                                 {/* Headers */}
                                 <div>
-                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">HTTP Headers</p>
-                                  <pre className="bg-slate-900/80 p-3 rounded border border-slate-800 text-slate-300 overflow-x-auto text-[11px] max-h-[150px] overflow-y-auto">
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 font-sans">HTTP Headers</p>
+                                  <pre className="bg-slate-900/80 p-3 rounded border border-slate-800 text-slate-300 overflow-x-auto text-[11px] font-mono max-h-[150px] overflow-y-auto">
                                     {JSON.stringify(lg.headers, null, 2)}
                                   </pre>
                                 </div>
 
                                 {/* Body payload */}
                                 <div>
-                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Payload (Request Body)</p>
-                                  <pre className="bg-slate-900/80 p-3 rounded border border-slate-800 text-slate-300 overflow-x-auto text-[11px]">
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 font-sans">Payload (Request Body)</p>
+                                  <pre className="bg-slate-900/80 p-3 rounded border border-slate-800 text-slate-300 overflow-x-auto text-[11px] font-mono">
                                     {lg.body || "(empty)"}
                                   </pre>
                                 </div>
@@ -658,7 +782,7 @@ function SubmitButton() {
       type="submit"
       disabled={pending}
       className={clsx(
-        "w-full flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200",
+        "w-full flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 cursor-pointer",
         pending && "opacity-50 cursor-not-allowed"
       )}
     >
