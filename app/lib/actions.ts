@@ -2,9 +2,11 @@
 
 import clientPromise from "./mongodb";
 import { revalidatePath } from "next/cache";
+import { auth } from "@clerk/nextjs/server";
 
 export interface WebhookDefinition {
   _id?: string;
+  userId: string;
   slug: string;
   name: string;
   method: string;
@@ -28,40 +30,101 @@ export interface WebhookRequestLog {
   emailError?: string;
 }
 
+export interface UserTierInfo {
+  isPremium: boolean;
+  activePlan: string;
+  endpointsCount: number;
+}
+
 export type WebhookState = { error: string } | { data: WebhookDefinition };
+
+/**
+ * Gets the current user's subscription tier and usage statistics
+ */
+export async function getUserTier(): Promise<UserTierInfo> {
+  try {
+    const { userId, has } = await auth();
+    if (!userId) {
+      return { isPremium: false, activePlan: "Guest", endpointsCount: 0 };
+    }
+
+    const client = await clientPromise;
+    const db = client.db("dynamic-webhook-app");
+    const count = await db.collection("webhooks").countDocuments({ userId });
+
+    const isPremium = has({ plan: "premium" }) || has({ feature: "email_alerts" });
+    return {
+      isPremium,
+      activePlan: isPremium ? "Premium Plan" : "Free Plan",
+      endpointsCount: count,
+    };
+  } catch (e) {
+    console.error("Error fetching user tier info", e);
+    return { isPremium: false, activePlan: "Free Plan", endpointsCount: 0 };
+  }
+}
 
 /**
  * Creates a dynamic webhook endpoint configuration
  */
 export async function createWebhook(prevState: any, formData: FormData): Promise<WebhookState> {
-  const name = (formData.get("name") as string) || "My Webhook";
-  let slug = (formData.get("slug") as string) || "";
-  const method = (formData.get("method") as string) || "POST";
-  const statusStr = (formData.get("status") as string) || "200";
-  const contentType = (formData.get("contentType") as string) || "application/json";
-  const body = (formData.get("body") as string) || "{\"status\": \"success\"}";
-  const notifyEmail = (formData.get("notifyEmail") as string) || "";
-
-  // Normalize slug: lowercase and hyphenated or auto-generate if empty
-  if (!slug) {
-    slug = Math.random().toString(36).substring(2, 8);
-  } else {
-    slug = slug.trim().toLowerCase().replace(/[^a-z0-9-_]/g, "-");
-  }
-
-  const status = Number.parseInt(statusStr, 10) || 200;
-
   try {
+    const { userId, has } = await auth();
+    if (!userId) {
+      return { error: "You must be signed in to configure webhooks." };
+    }
+
+    const name = (formData.get("name") as string) || "My Webhook";
+    let slug = (formData.get("slug") as string) || "";
+    const method = (formData.get("method") as string) || "POST";
+    const statusStr = (formData.get("status") as string) || "200";
+    const contentType = (formData.get("contentType") as string) || "application/json";
+    const body = (formData.get("body") as string) || "{\"status\": \"success\"}";
+    const notifyEmail = (formData.get("notifyEmail") as string) || "";
+
+    const status = Number.parseInt(statusStr, 10) || 200;
+    const isPremium = has({ plan: "premium" }) || has({ feature: "email_alerts" });
+
     const client = await clientPromise;
     const db = client.db("dynamic-webhook-app");
 
-    // Check if slug is already taken
+    // Tier 1 restriction: Max 2 webhooks on free tier
+    const count = await db.collection("webhooks").countDocuments({ userId });
+    if (!isPremium && count >= 2) {
+      return {
+        error: "Free tier limit reached. You can only create up to 2 webhooks. Please upgrade to Premium."
+      };
+    }
+
+    // Tier 2 restriction: Email alerts require Premium plan
+    if (notifyEmail.trim() && !isPremium) {
+      return {
+        error: "Instant Email alerts are a Premium feature. Please upgrade your subscription to enable this feature."
+      };
+    }
+
+    // Tier 3 restriction: Custom HTTP status (other than 200, 201, 204) requires Premium plan
+    if (!isPremium && status !== 200 && status !== 201 && status !== 204) {
+      return {
+        error: "Custom response statuses (other than 200/201/204) require a Premium subscription."
+      };
+    }
+
+    // Normalize slug: lowercase and hyphenated or auto-generate if empty
+    if (!slug) {
+      slug = Math.random().toString(36).substring(2, 8);
+    } else {
+      slug = slug.trim().toLowerCase().replace(/[^a-z0-9-_]/g, "-");
+    }
+
+    // Check if slug is already taken globally
     const existing = await db.collection("webhooks").findOne({ slug });
     if (existing) {
       return { error: `The endpoint path '/api/webhooks/${slug}' is already taken. Please choose a different one.` };
     }
 
     const newWebhook: any = {
+      userId,
       name,
       slug,
       method,
@@ -83,20 +146,24 @@ export async function createWebhook(prevState: any, formData: FormData): Promise
 }
 
 /**
- * Retrieves all registered dynamic webhooks
+ * Retrieves all registered dynamic webhooks for the authenticated user
  */
 export async function getWebhooks(): Promise<WebhookDefinition[]> {
   try {
+    const { userId } = await auth();
+    if (!userId) return [];
+
     const client = await clientPromise;
     const db = client.db("dynamic-webhook-app");
     const docs = await db
       .collection("webhooks")
-      .find({})
+      .find({ userId })
       .sort({ createdAt: -1 })
       .toArray();
 
     return docs.map((doc) => ({
       _id: doc._id.toString(),
+      userId: doc.userId,
       name: doc.name,
       slug: doc.slug,
       method: doc.method,
@@ -113,13 +180,21 @@ export async function getWebhooks(): Promise<WebhookDefinition[]> {
 }
 
 /**
- * Retrieves incoming request logs for a specific webhook slug
+ * Retrieves incoming request logs for a specific webhook slug belonging to the authenticated user
  */
 export async function getWebhookLogs(slug: string): Promise<WebhookRequestLog[]> {
   if (!slug) return [];
   try {
+    const { userId } = await auth();
+    if (!userId) return [];
+
     const client = await clientPromise;
     const db = client.db("dynamic-webhook-app");
+
+    // Enforce ownership check before fetching logs
+    const webhook = await db.collection("webhooks").findOne({ slug, userId });
+    if (!webhook) return [];
+
     const docs = await db
       .collection("logs")
       .find({ webhookSlug: slug })
@@ -150,11 +225,22 @@ export async function getWebhookLogs(slug: string): Promise<WebhookRequestLog[]>
  */
 export async function deleteWebhook(slug: string) {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return { error: "Unauthorized. Please sign in." };
+    }
+
     const client = await clientPromise;
     const db = client.db("dynamic-webhook-app");
 
+    // Check ownership
+    const webhook = await db.collection("webhooks").findOne({ slug, userId });
+    if (!webhook) {
+      return { error: "Webhook not found or access denied." };
+    }
+
     await Promise.all([
-      db.collection("webhooks").deleteOne({ slug }),
+      db.collection("webhooks").deleteOne({ slug, userId }),
       db.collection("logs").deleteMany({ webhookSlug: slug }),
     ]);
 
@@ -170,8 +256,20 @@ export async function deleteWebhook(slug: string) {
  */
 export async function clearWebhookLogs(slug: string) {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return { error: "Unauthorized. Please sign in." };
+    }
+
     const client = await clientPromise;
     const db = client.db("dynamic-webhook-app");
+
+    // Check ownership
+    const webhook = await db.collection("webhooks").findOne({ slug, userId });
+    if (!webhook) {
+      return { error: "Webhook not found or access denied." };
+    }
+
     await db.collection("logs").deleteMany({ webhookSlug: slug });
     revalidatePath("/");
     return { data: "Logs cleared successfully." };
@@ -181,19 +279,46 @@ export async function clearWebhookLogs(slug: string) {
 }
 
 /**
- * Fetches dynamic dashboard analytics
+ * Fetches dynamic dashboard analytics for the authenticated user
  */
 export async function getDashboardAnalytics() {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return {
+        totalEndpoints: 0,
+        totalLogs: 0,
+        errors: 0,
+        successes: 0,
+      };
+    }
+
     const client = await clientPromise;
     const db = client.db("dynamic-webhook-app");
 
-    const totalEndpoints = await db.collection("webhooks").countDocuments();
-    const totalLogs = await db.collection("logs").countDocuments();
+    // Find all webhooks for this user
+    const userWebhooks = await db.collection("webhooks").find({ userId }).toArray();
+    const userSlugs = userWebhooks.map((w) => w.slug);
 
-    // Calculate error (4xx, 5xx) counts from the logs
-    // (In our log schema, we can store responseStatus returned during execution)
-    const logs = await db.collection("logs").find({}).project({ status: 1 }).toArray();
+    const totalEndpoints = userWebhooks.length;
+
+    if (totalEndpoints === 0) {
+      return {
+        totalEndpoints: 0,
+        totalLogs: 0,
+        errors: 0,
+        successes: 0,
+      };
+    }
+
+    // Find logs for those webhooks only
+    const totalLogs = await db.collection("logs").countDocuments({ webhookSlug: { $in: userSlugs } });
+
+    const logs = await db.collection("logs")
+      .find({ webhookSlug: { $in: userSlugs } })
+      .project({ status: 1 })
+      .toArray();
+
     const statusCodes = logs.map((l) => l.status).filter(Boolean);
     const errors = statusCodes.filter((c) => c >= 400).length;
     const successes = statusCodes.filter((c) => c >= 200 && c < 300).length;

@@ -1,0 +1,176 @@
+$ next dev
+▲ Next.js 16.2.9 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.0.2:3000
+- Environments: .env.local
+✓ Ready in 616ms
+
+Attention: Clerk collects telemetry data from its SDKs when connected to development instances.
+The data collected is used to inform Clerk's product roadmap.
+To learn more, including how to opt-out from the telemetry program, visit: https://clerk.com/docs/telemetry.
+
+Clerk: Refreshing the session token resulted in an infinite redirect loop. This usually means that your Clerk instance keys do not match - make sure to copy the correct publishable and secret keys from the Clerk dashboard.
+ GET / 200 in 1030ms (next.js: 277ms, proxy.ts: 12ms, application-code: 741ms)
+[browser] Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview (https://absolute-sloth-13.clerk.accounts.dev/npm/@clerk/clerk-js@6/dist/clerk.browser.js:12:6133)
+ GET /pricing 200 in 147ms (next.js: 23ms, proxy.ts: 10ms, application-code: 114ms)
+[browser] Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview (https://absolute-sloth-13.clerk.accounts.dev/npm/@clerk/clerk-js@6/dist/clerk.browser.js:12:6133)
+[browser] Clerk billing not configured or error rendering PricingTable: e: Clerk: 🔒
+The <PricingTable/> component cannot be rendered when billing is disabled. Visit 'https://dashboard.clerk.com/last-active?path=billing/settings' to follow the necessary steps to enable billing. Since billing is disabled, this is no-op.
+(This notice only appears in development)
+
+(code="cannot_render_billing_disabled")
+
+
+    at sU.mountPricingTable (https://absolute-sloth-13.clerk.accounts.dev/npm/@clerk/clerk-js@6/dist/clerk.browser.js:18:195652)
+    at PricingPage (app/pricing/page.tsx:171:13)
+  169 |         <div className="bg-slate-900/20 border border-slate-900/60 rounded-3xl p-6 sm:p-1...
+  170 |           <ErrorBoundary>
+> 171 |             <PricingTable />
+      |             ^
+  172 |           </ErrorBoundary>
+  173 |         </div>
+  174 | {
+  componentStack: [32m'\n'[39m +
+    [32m'    at ClerkHostRenderer (http://localhost:3000/_next/static/chunks/0xy0_%40clerk_react_dist_09w-sqz._.js:729:9)\n'[39m +
+    [32m'    at push.withClerk.component (http://localhost:3000/_next/static/chunks/0xy0_%40clerk_react_dist_09w-sqz._.js:1151:35)\n'[39m +
+    [32m'    at HOC (http://localhost:3000/_next/static/chunks/0xy0_%40clerk_react_dist_09w-sqz._.js:778:345)\n'[39m +
+    [32m'    at ErrorBoundary (http://localhost:3000/_next/static/chunks/_0-qh-p9._.js:23:9)\n'[39m +
+    [32m'    at div (<anonymous>)\n'[39m +
+    [32m'    at div (<anonymous>)\n'[39m +
+    [32m'    at div (<anonymous>)\n'[39m +
+    [32m'    at PricingPage (<anonymous>)\n'[39m +
+    [32m'    at ClientPageRoot (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:10965:27)\n'[39m +
+    [32m'    at SegmentViewNode (http://localhost:3000/_next/static/chunks/0ly8_next_dist_1tgaskt._.js:3538:28)\n'[39m +
+    [32m'    at InnerLayoutRouter (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7401:34)\n'[39m +
+    [32m'    at RedirectErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:12660:9)\n'[39m +
+    [32m'    at RedirectBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:12702:29)\n'[39m +
+    [32m'    at HTTPAccessFallbackBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:13196:39)\n'[39m +
+    [32m'    at LoadingBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7522:32)\n'[39m +
+    [32m'    at ErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:1567:26)\n'[39m +
+    [32m'    at InnerScrollAndFocusHandlerOld (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7236:9)\n'[39m +
+    [32m'    at ScrollAndMaybeFocusHandler (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7384:39)\n'[39m +
+    [32m'    at RenderFromTemplateContext (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7774:44)\n'[39m +
+    [32m'    at SegmentStateProvider (http://localhost:3000/_next/static/chunks/0ly8_next_dist_1tgaskt._.js:3554:33)\n'[39m +
+    [32m'    at OuterLayoutRouter (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7548:30)\n'[39m +
+    [32m'    at InnerLayoutRouter (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7401:34)\n'[39m +
+    [32m'    at RedirectErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:12660:9)\n'[39m +
+    [32m'    at RedirectBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:12702:29)\n'[39m +
+    [32m'    at HTTPAccessFallbackErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:13121:9)\n'[39m +
+    [32m'    at HTTPAccessFallbackBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:13196:39)\n'[39m +
+    [32m'    at LoadingBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7522:32)\n'[39m +
+    [32m'    at ErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:1567:26)\n'[39m +
+    [32m'    at InnerScrollAndFocusHandlerOld (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7236:9)\n'[39m +
+    [32m'    at ScrollAndMaybeFocusHandler (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7384:39)\n'[39m +
+    [32m'    at RenderFromTemplateContext (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7774:44)\n'[39m +
+    [32m'    at SegmentStateProvider (http://localhost:3000/_next/static/chunks/0ly8_next_dist_1tgaskt._.js:3554:33)\n'[39m +
+    [32m'    at OuterLayoutRouter (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7548:30)\n'[39m +
+    [32m'    at main (<anonymous>)\n'[39m +
+    [32m'    at __experimental_CheckoutProvider (http://localhost:3000/_next/static/chunks/1dan_%40clerk_shared_dist_06ezaar._.js:2723:44)\n'[39m +
+    [32m'    at InitialStateProvider (http://localhost:3000/_next/static/chunks/1dan_%40clerk_shared_dist_06ezaar._.js:2702:36)\n'[39m +
+    [32m'    at ClerkContextProvider (http://localhost:3000/_next/static/chunks/1dan_%40clerk_shared_dist_06ezaar._.js:6152:25)\n'[39m +
+    [32m'    at ClerkProviderBase (http://localhost:3000/_next/static/chunks/0xy0_%40clerk_react_dist_09w-sqz._.js:3291:13)\n'[39m +
+    [32m'    at Hoc (http://localhost:3000/_next/static/chunks/0xy0_%40clerk_react_dist_09w-sqz._.js:258:9)\n'[39m +
+    [32m'    at ClerkNextOptionsProvider (http://localhost:3000/_next/static/chunks/1j0q_%40clerk_nextjs_dist_esm_19afxc6._.js:514:13)\n'[39m +
+    [32m'    at NextClientClerkProvider (http://localhost:3000/_next/static/chunks/1j0q_%40clerk_nextjs_dist_esm_19afxc6._.js:975:13)\n'[39m +
+    [32m'    at ClientClerkProvider (http://localhost:3000/_next/static/chunks/1j0q_%40clerk_nextjs_dist_esm_19afxc6._.js:1021:13)\n'[39m +
+    [32m'    at ClerkProvider [Server] (<anonymous>)\n'[39m +
+    [32m'    at body (<anonymous>)\n'[39m +
+    [32m'    at html (<anonymous>)\n'[39m +
+    [32m'    at RootLayout (about://React/Server/file:///app/.next/dev/server/chunks/ssr/%5Broot-of-the-server%5D__06mwgop._.js?2:119:401)\n'[39m +
+    [32m'    at SegmentViewNode (http://localhost:3000/_next/static/chunks/0ly8_next_dist_1tgaskt._.js:3538:28)\n'[39m +
+    [32m'    at __next_root_layout_boundary__ (http://localhost:3000/_next/static/chunks/0ly8_next_dist_1tgaskt._.js:2261:64)\n'[39m +
+    [32m'    at RedirectErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:12660:9)\n'[39m +
+    [32m'    at RedirectBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:12702:29)\n'[39m +
+    [32m'    at HTTPAccessFallbackErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:13121:9)\n'[39m +
+    [32m'    at HTTPAccessFallbackBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:13196:39)\n'[39m +
+    [32m'    at DevRootHTTPAccessFallbackBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:13265:46)\n'[39m +
+    [32m'    at AppDevOverlayErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_1tgaskt._.js:3658:9)\n'[39m +
+    [32m'    at HotReload (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:14228:22)\n'[39m +
+    [32m'    at Router (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:14386:23)\n'[39m +
+    [32m'    at ErrorBoundaryHandler (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:1495:9)\n'[39m +
+    [32m'    at ErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:1567:26)\n'[39m +
+    [32m'    at RootErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:12947:30)\n'[39m +
+    [32m'    at AppRouter (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:14716:22)\n'[39m +
+    [32m'    at ServerRoot (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:15201:23)\n'[39m +
+    [32m'    at Root (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:15219:17)'[39m
+} (app/pricing/page.tsx:18:13)
+[browser] Clerk billing not configured or error rendering PricingTable: e: Clerk: 🔒
+The <PricingTable/> component cannot be rendered when billing is disabled. Visit 'https://dashboard.clerk.com/last-active?path=billing/settings' to follow the necessary steps to enable billing. Since billing is disabled, this is no-op.
+(This notice only appears in development)
+
+(code="cannot_render_billing_disabled")
+
+
+    at sU.mountPricingTable (https://absolute-sloth-13.clerk.accounts.dev/npm/@clerk/clerk-js@6/dist/clerk.browser.js:18:195652)
+    at PricingPage (app/pricing/page.tsx:171:13)
+  169 |         <div className="bg-slate-900/20 border border-slate-900/60 rounded-3xl p-6 sm:p-1...
+  170 |           <ErrorBoundary>
+> 171 |             <PricingTable />
+      |             ^
+  172 |           </ErrorBoundary>
+  173 |         </div>
+  174 | {
+  componentStack: [32m'\n'[39m +
+    [32m'    at ClerkHostRenderer (http://localhost:3000/_next/static/chunks/0xy0_%40clerk_react_dist_09w-sqz._.js:729:9)\n'[39m +
+    [32m'    at push.withClerk.component (http://localhost:3000/_next/static/chunks/0xy0_%40clerk_react_dist_09w-sqz._.js:1151:35)\n'[39m +
+    [32m'    at HOC (http://localhost:3000/_next/static/chunks/0xy0_%40clerk_react_dist_09w-sqz._.js:778:345)\n'[39m +
+    [32m'    at ErrorBoundary (http://localhost:3000/_next/static/chunks/_0-qh-p9._.js:23:9)\n'[39m +
+    [32m'    at div (<anonymous>)\n'[39m +
+    [32m'    at div (<anonymous>)\n'[39m +
+    [32m'    at div (<anonymous>)\n'[39m +
+    [32m'    at PricingPage (<anonymous>)\n'[39m +
+    [32m'    at ClientPageRoot (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:10965:27)\n'[39m +
+    [32m'    at SegmentViewNode (http://localhost:3000/_next/static/chunks/0ly8_next_dist_1tgaskt._.js:3538:28)\n'[39m +
+    [32m'    at InnerLayoutRouter (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7401:34)\n'[39m +
+    [32m'    at RedirectErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:12660:9)\n'[39m +
+    [32m'    at RedirectBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:12702:29)\n'[39m +
+    [32m'    at HTTPAccessFallbackBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:13196:39)\n'[39m +
+    [32m'    at LoadingBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7522:32)\n'[39m +
+    [32m'    at ErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:1567:26)\n'[39m +
+    [32m'    at InnerScrollAndFocusHandlerOld (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7236:9)\n'[39m +
+    [32m'    at ScrollAndMaybeFocusHandler (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7384:39)\n'[39m +
+    [32m'    at RenderFromTemplateContext (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7774:44)\n'[39m +
+    [32m'    at SegmentStateProvider (http://localhost:3000/_next/static/chunks/0ly8_next_dist_1tgaskt._.js:3554:33)\n'[39m +
+    [32m'    at OuterLayoutRouter (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7548:30)\n'[39m +
+    [32m'    at InnerLayoutRouter (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7401:34)\n'[39m +
+    [32m'    at RedirectErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:12660:9)\n'[39m +
+    [32m'    at RedirectBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:12702:29)\n'[39m +
+    [32m'    at HTTPAccessFallbackErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:13121:9)\n'[39m +
+    [32m'    at HTTPAccessFallbackBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:13196:39)\n'[39m +
+    [32m'    at LoadingBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7522:32)\n'[39m +
+    [32m'    at ErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:1567:26)\n'[39m +
+    [32m'    at InnerScrollAndFocusHandlerOld (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7236:9)\n'[39m +
+    [32m'    at ScrollAndMaybeFocusHandler (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7384:39)\n'[39m +
+    [32m'    at RenderFromTemplateContext (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7774:44)\n'[39m +
+    [32m'    at SegmentStateProvider (http://localhost:3000/_next/static/chunks/0ly8_next_dist_1tgaskt._.js:3554:33)\n'[39m +
+    [32m'    at OuterLayoutRouter (http://localhost:3000/_next/static/chunks/0ly8_next_11k5crb._.js:7548:30)\n'[39m +
+    [32m'    at main (<anonymous>)\n'[39m +
+    [32m'    at __experimental_CheckoutProvider (http://localhost:3000/_next/static/chunks/1dan_%40clerk_shared_dist_06ezaar._.js:2723:44)\n'[39m +
+    [32m'    at InitialStateProvider (http://localhost:3000/_next/static/chunks/1dan_%40clerk_shared_dist_06ezaar._.js:2702:36)\n'[39m +
+    [32m'    at ClerkContextProvider (http://localhost:3000/_next/static/chunks/1dan_%40clerk_shared_dist_06ezaar._.js:6152:25)\n'[39m +
+    [32m'    at ClerkProviderBase (http://localhost:3000/_next/static/chunks/0xy0_%40clerk_react_dist_09w-sqz._.js:3291:13)\n'[39m +
+    [32m'    at Hoc (http://localhost:3000/_next/static/chunks/0xy0_%40clerk_react_dist_09w-sqz._.js:258:9)\n'[39m +
+    [32m'    at ClerkNextOptionsProvider (http://localhost:3000/_next/static/chunks/1j0q_%40clerk_nextjs_dist_esm_19afxc6._.js:514:13)\n'[39m +
+    [32m'    at NextClientClerkProvider (http://localhost:3000/_next/static/chunks/1j0q_%40clerk_nextjs_dist_esm_19afxc6._.js:975:13)\n'[39m +
+    [32m'    at ClientClerkProvider (http://localhost:3000/_next/static/chunks/1j0q_%40clerk_nextjs_dist_esm_19afxc6._.js:1021:13)\n'[39m +
+    [32m'    at ClerkProvider [Server] (<anonymous>)\n'[39m +
+    [32m'    at body (<anonymous>)\n'[39m +
+    [32m'    at html (<anonymous>)\n'[39m +
+    [32m'    at RootLayout (about://React/Server/file:///app/.next/dev/server/chunks/ssr/%5Broot-of-the-server%5D__06mwgop._.js?2:119:401)\n'[39m +
+    [32m'    at SegmentViewNode (http://localhost:3000/_next/static/chunks/0ly8_next_dist_1tgaskt._.js:3538:28)\n'[39m +
+    [32m'    at __next_root_layout_boundary__ (http://localhost:3000/_next/static/chunks/0ly8_next_dist_1tgaskt._.js:2261:64)\n'[39m +
+    [32m'    at RedirectErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:12660:9)\n'[39m +
+    [32m'    at RedirectBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:12702:29)\n'[39m +
+    [32m'    at HTTPAccessFallbackErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:13121:9)\n'[39m +
+    [32m'    at HTTPAccessFallbackBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:13196:39)\n'[39m +
+    [32m'    at DevRootHTTPAccessFallbackBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:13265:46)\n'[39m +
+    [32m'    at AppDevOverlayErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_1tgaskt._.js:3658:9)\n'[39m +
+    [32m'    at HotReload (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:14228:22)\n'[39m +
+    [32m'    at Router (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:14386:23)\n'[39m +
+    [32m'    at ErrorBoundaryHandler (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:1495:9)\n'[39m +
+    [32m'    at ErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:1567:26)\n'[39m +
+    [32m'    at RootErrorBoundary (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:12947:30)\n'[39m +
+    [32m'    at AppRouter (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:14716:22)\n'[39m +
+    [32m'    at ServerRoot (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:15201:23)\n'[39m +
+    [32m'    at Root (http://localhost:3000/_next/static/chunks/0ly8_next_dist_client_1ri-qb-._.js:15219:17)'[39m
+} (app/pricing/page.tsx:18:13)
