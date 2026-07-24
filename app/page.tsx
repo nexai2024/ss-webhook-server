@@ -37,7 +37,8 @@ import {
   Globe,
   ArrowRight,
   Sparkles,
-  Lock
+  Lock,
+  Server
 } from "lucide-react";
 import Link from "next/link";
 
@@ -231,15 +232,15 @@ export default function Page() {
       <div className="bg-slate-950 text-slate-100 min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center py-16 px-4 sm:px-6 lg:px-8 font-sans">
         <div className="max-w-4xl text-center space-y-8">
           <div className="inline-flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/30 px-3.5 py-1.5 rounded-full text-indigo-400 text-xs font-semibold uppercase tracking-wider">
-            <Sparkles className="h-4 w-4" /> New: Integrated clerk subscriptions & billing
+            <Sparkles className="h-4 w-4" /> MIT-Licensed & Self-Hostable • Unlimited Free Requests
           </div>
 
           <h1 className="text-5xl sm:text-6xl font-extrabold tracking-tight leading-none bg-gradient-to-r from-indigo-400 via-sky-400 to-emerald-400 bg-clip-text text-transparent">
-            Next-Gen Dynamic Webhook Platform
+            Unrate-limited Webhook Inspection
           </h1>
 
-          <p className="text-lg text-slate-400 max-w-2xl mx-auto font-medium">
-            Define fully custom, secure webhook response mock payloads on the fly. Store incoming HTTP headers, queries, and bodies in MongoDB, and receive beautiful React Email notifications via Resend.
+          <p className="text-lg text-slate-400 max-w-2xl mx-auto font-medium leading-relaxed">
+            Tired of paying for expensive enterprise infrastructure or hitting Webhook.site rate limits just to see what your webhooks are sending you? Get unlimited requests, MongoDB storage, and Resend notifications on your own server for free under MIT, or scale instantly with our Managed SaaS.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
@@ -249,19 +250,24 @@ export default function Page() {
               </button>
             </SignUpButton>
             <Link href="/pricing" className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl bg-slate-900 border border-slate-800 px-6 py-3.5 text-sm font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer">
-              View Pricing Tiers
+              Compare OSS vs Managed Cloud
             </Link>
           </div>
 
-          {/* Value props showcase */}
+          {/* GTM / OSS vs SaaS Value Props */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-12 text-left">
-            <div className="bg-slate-900/50 border border-slate-900 p-6 rounded-2xl space-y-3 shadow-lg">
+            <div className="bg-slate-900/50 border border-slate-900 p-6 rounded-2xl space-y-3 shadow-lg relative">
+              <div className="absolute top-4 right-4 text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                100% Free
+              </div>
               <span className="p-2.5 bg-indigo-600/10 text-indigo-400 rounded-xl inline-block border border-indigo-500/10">
-                <Globe className="h-5 w-5" />
+                <Server className="h-5 w-5" />
               </span>
-              <h3 className="font-bold text-white">Custom Routing</h3>
-              <p className="text-xs text-slate-400">
-                Choose GET, POST, PUT, DELETE, or ALL methods. Configure your own custom content types and return codes.
+              <h3 className="font-bold text-white flex items-center gap-2">
+                MIT Self-Hosted
+              </h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                No rate limits, no subscription fees. Run on your own VPS or localhost and capture unlimited webhook requests. Genuine open-source developer freedom.
               </p>
             </div>
 
@@ -270,8 +276,8 @@ export default function Page() {
                 <Database className="h-5 w-5" />
               </span>
               <h3 className="font-bold text-white">MongoDB Inspector</h3>
-              <p className="text-xs text-slate-400">
-                Every webhook call records detailed logs. Review client IP addresses, timestamps, headers, queries, and payload bodies.
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Tired of losing logs? Stream all webhook bodies, query parameters, client IP addresses, and HTTP headers directly to your MongoDB database for robust audits.
               </p>
             </div>
 
@@ -280,10 +286,25 @@ export default function Page() {
                 <Mail className="h-5 w-5" />
               </span>
               <h3 className="font-bold text-white">Resend Email Alerts</h3>
-              <p className="text-xs text-slate-400">
-                Automatically dispatch elegant React Email summaries directly to your developer inbox on webhook execution.
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Set up instant email notification alerts for high-priority webhooks. Get detailed React Email breakdowns sent to your inbox when events trigger.
               </p>
             </div>
+          </div>
+
+          {/* Direct comparison callout */}
+          <div className="bg-slate-900/30 border border-slate-900/80 p-6 rounded-3xl max-w-3xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-left">
+            <div>
+              <h4 className="font-bold text-white text-sm flex items-center gap-1.5">
+                <Code className="h-4 w-4 text-indigo-400" /> Webhook.site alternative
+              </h4>
+              <p className="text-xs text-slate-400 mt-1 max-w-xl">
+                Unlike closed-source tools with restrictive tiers, Endpoint Hub gives you absolute control. Inspect your incoming payloads locally without paying a dime for enterprise infrastructure.
+              </p>
+            </div>
+            <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="shrink-0 text-xs text-indigo-400 font-semibold hover:text-indigo-300 transition-colors flex items-center gap-1">
+              View Open Source Code <ArrowRight className="h-3 w-3" />
+            </a>
           </div>
         </div>
       </div>

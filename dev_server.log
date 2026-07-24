@@ -3,179 +3,16 @@ $ next dev
 - Local:         http://localhost:3000
 - Network:       http://192.168.0.2:3000
 - Environments: .env.local
-✓ Ready in 580ms
+✓ Ready in 616ms
 
 Attention: Clerk collects telemetry data from its SDKs when connected to development instances.
 The data collected is used to inform Clerk's product roadmap.
 To learn more, including how to opt-out from the telemetry program, visit: https://clerk.com/docs/telemetry.
 
 Clerk: Refreshing the session token resulted in an infinite redirect loop. This usually means that your Clerk instance keys do not match - make sure to copy the correct publishable and secret keys from the Clerk dashboard.
-○ Compiling / ...
- GET / 200 in 7.7s (next.js: 6.7s, proxy.ts: 12ms, application-code: 969ms)
+ GET / 200 in 1030ms (next.js: 277ms, proxy.ts: 12ms, application-code: 741ms)
 [browser] Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview (https://absolute-sloth-13.clerk.accounts.dev/npm/@clerk/clerk-js@6/dist/clerk.browser.js:12:6133)
- GET /pricing 200 in 1109ms (next.js: 1019ms, proxy.ts: 28ms, application-code: 62ms)
-[browser] Uncaught e: Clerk: 🔒
-The <PricingTable/> component cannot be rendered when billing is disabled. Visit 'https://dashboard.clerk.com/last-active?path=billing/settings' to follow the necessary steps to enable billing. Since billing is disabled, this is no-op.
-(This notice only appears in development)
-
-(code="cannot_render_billing_disabled")
-
-
-    at sU.mountPricingTable (https://absolute-sloth-13.clerk.accounts.dev/npm/@clerk/clerk-js@6/dist/clerk.browser.js:18:195652)
-    at PricingPage (app/pricing/page.tsx:18:11)
-  16 |         {/* Pricing Table Component */}
-  17 |         <div className="bg-slate-900/40 border border-slate-900 rounded-2xl p-6 sm:p-10 sh...
-> 18 |           <PricingTable />
-     |           ^
-  19 |         </div>
-  20 |       </div>
-  21 |     </div>
-Clerk: Refreshing the session token resulted in an infinite redirect loop. This usually means that your Clerk instance keys do not match - make sure to copy the correct publishable and secret keys from the Clerk dashboard.
- GET / 500 in 1462ms (next.js: 1269ms, proxy.ts: 9ms, application-code: 183ms)
-[browser] Uncaught Error: ./app/pricing/page.tsx:110:8
-Unterminated regexp literal
-  108 |           </div>
-  109 |         </div>
-> 110 |       </div>
-      |        ^^^^^
-  111 |     </div>
-  112 |   );
-  113 | }
-
-Parsing ecmascript source code failed
-
-
-    at <unknown> (Error: ./app/pricing/page.tsx:110:8)
-    at <unknown> (Error: (./app/pricing/page.tsx:110:8)
-[browser] ./app/pricing/page.tsx:110:8
-Unterminated regexp literal
-  108 |           </div>
-  109 |         </div>
-> 110 |       </div>
-      |        ^^^^^
-  111 |     </div>
-  112 |   );
-  113 | }
-
-Parsing ecmascript source code failed
-[browser] ./app/pricing/page.tsx:110:8
-Unterminated regexp literal
-  108 |           </div>
-  109 |         </div>
-> 110 |       </div>
-      |        ^^^^^
-  111 |     </div>
-  112 |   );
-  113 | }
-
-Parsing ecmascript source code failed
-[browser] ./app/pricing/page.tsx:110:8
-Unterminated regexp literal
-  108 |           </div>
-  109 |         </div>
-> 110 |       </div>
-      |        ^^^^^
-  111 |     </div>
-  112 |   );
-  113 | }
-
-Parsing ecmascript source code failed
-Clerk: Refreshing the session token resulted in an infinite redirect loop. This usually means that your Clerk instance keys do not match - make sure to copy the correct publishable and secret keys from the Clerk dashboard.
- GET / 500 in 39ms (next.js: 11ms, proxy.ts: 11ms, application-code: 17ms)
-[browser] Uncaught Error: ./app/pricing/page.tsx:110:8
-Unterminated regexp literal
-  108 |           </div>
-  109 |         </div>
-> 110 |       </div>
-      |        ^^^^^
-  111 |     </div>
-  112 |   );
-  113 | }
-
-Parsing ecmascript source code failed
-
-
-    at <unknown> (Error: ./app/pricing/page.tsx:110:8)
-    at <unknown> (Error: (./app/pricing/page.tsx:110:8)
-[browser] ./app/pricing/page.tsx:110:8
-Unterminated regexp literal
-  108 |           </div>
-  109 |         </div>
-> 110 |       </div>
-      |        ^^^^^
-  111 |     </div>
-  112 |   );
-  113 | }
-
-Parsing ecmascript source code failed
-[browser] ./app/pricing/page.tsx:110:8
-Unterminated regexp literal
-  108 |           </div>
-  109 |         </div>
-> 110 |       </div>
-      |        ^^^^^
-  111 |     </div>
-  112 |   );
-  113 | }
-
-Parsing ecmascript source code failed
-Clerk: Refreshing the session token resulted in an infinite redirect loop. This usually means that your Clerk instance keys do not match - make sure to copy the correct publishable and secret keys from the Clerk dashboard.
-⨯ ./app/pricing/page.tsx:110:8
-Unterminated regexp literal
-  [90m108 |[0m           </div>
-  [90m109 |[0m         </div>
-[31m[1m>[0m [90m110 |[0m       </div>
-  [90m    |[0m        [31m[1m^^^^^[0m
-  [90m111 |[0m     </div>
-  [90m112 |[0m   );
-  [90m113 |[0m }
-
-Parsing ecmascript source code failed
-
-
- GET /pricing 500 in 40ms (next.js: 18ms, proxy.ts: 9ms, application-code: 14ms)
-[browser] Uncaught Error: ./app/pricing/page.tsx:110:8
-Unterminated regexp literal
-  108 |           </div>
-  109 |         </div>
-> 110 |       </div>
-      |        ^^^^^
-  111 |     </div>
-  112 |   );
-  113 | }
-
-Parsing ecmascript source code failed
-
-
-    at <unknown> (Error: ./app/pricing/page.tsx:110:8)
-    at <unknown> (Error: (./app/pricing/page.tsx:110:8)
-[browser] ./app/pricing/page.tsx:110:8
-Unterminated regexp literal
-  108 |           </div>
-  109 |         </div>
-> 110 |       </div>
-      |        ^^^^^
-  111 |     </div>
-  112 |   );
-  113 | }
-
-Parsing ecmascript source code failed
-[browser] ./app/pricing/page.tsx:110:8
-Unterminated regexp literal
-  108 |           </div>
-  109 |         </div>
-> 110 |       </div>
-      |        ^^^^^
-  111 |     </div>
-  112 |   );
-  113 | }
-
-Parsing ecmascript source code failed
-✓ Compiled in 181ms
-Clerk: Refreshing the session token resulted in an infinite redirect loop. This usually means that your Clerk instance keys do not match - make sure to copy the correct publishable and secret keys from the Clerk dashboard.
- GET / 200 in 714ms (next.js: 166ms, proxy.ts: 12ms, application-code: 535ms)
-[browser] Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview (https://absolute-sloth-13.clerk.accounts.dev/npm/@clerk/clerk-js@6/dist/clerk.browser.js:12:6133)
- GET /pricing 200 in 125ms (next.js: 19ms, proxy.ts: 13ms, application-code: 93ms)
+ GET /pricing 200 in 147ms (next.js: 23ms, proxy.ts: 10ms, application-code: 114ms)
 [browser] Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview (https://absolute-sloth-13.clerk.accounts.dev/npm/@clerk/clerk-js@6/dist/clerk.browser.js:12:6133)
 [browser] Clerk billing not configured or error rendering PricingTable: e: Clerk: 🔒
 The <PricingTable/> component cannot be rendered when billing is disabled. Visit 'https://dashboard.clerk.com/last-active?path=billing/settings' to follow the necessary steps to enable billing. Since billing is disabled, this is no-op.
@@ -185,19 +22,19 @@ The <PricingTable/> component cannot be rendered when billing is disabled. Visit
 
 
     at sU.mountPricingTable (https://absolute-sloth-13.clerk.accounts.dev/npm/@clerk/clerk-js@6/dist/clerk.browser.js:18:195652)
-    at PricingPage (app/pricing/page.tsx:133:13)
-  131 |         <div className="bg-slate-900/20 border border-slate-900/60 rounded-3xl p-6 sm:p-1...
-  132 |           <ErrorBoundary>
-> 133 |             <PricingTable />
+    at PricingPage (app/pricing/page.tsx:171:13)
+  169 |         <div className="bg-slate-900/20 border border-slate-900/60 rounded-3xl p-6 sm:p-1...
+  170 |           <ErrorBoundary>
+> 171 |             <PricingTable />
       |             ^
-  134 |           </ErrorBoundary>
-  135 |         </div>
-  136 |       </div> {
+  172 |           </ErrorBoundary>
+  173 |         </div>
+  174 | {
   componentStack: [32m'\n'[39m +
     [32m'    at ClerkHostRenderer (http://localhost:3000/_next/static/chunks/0xy0_%40clerk_react_dist_09w-sqz._.js:729:9)\n'[39m +
     [32m'    at push.withClerk.component (http://localhost:3000/_next/static/chunks/0xy0_%40clerk_react_dist_09w-sqz._.js:1151:35)\n'[39m +
     [32m'    at HOC (http://localhost:3000/_next/static/chunks/0xy0_%40clerk_react_dist_09w-sqz._.js:778:345)\n'[39m +
-    [32m'    at ErrorBoundary (http://localhost:3000/_next/static/chunks/_1ug9j-1._.js:22:9)\n'[39m +
+    [32m'    at ErrorBoundary (http://localhost:3000/_next/static/chunks/_0-qh-p9._.js:23:9)\n'[39m +
     [32m'    at div (<anonymous>)\n'[39m +
     [32m'    at div (<anonymous>)\n'[39m +
     [32m'    at div (<anonymous>)\n'[39m +
@@ -265,19 +102,19 @@ The <PricingTable/> component cannot be rendered when billing is disabled. Visit
 
 
     at sU.mountPricingTable (https://absolute-sloth-13.clerk.accounts.dev/npm/@clerk/clerk-js@6/dist/clerk.browser.js:18:195652)
-    at PricingPage (app/pricing/page.tsx:133:13)
-  131 |         <div className="bg-slate-900/20 border border-slate-900/60 rounded-3xl p-6 sm:p-1...
-  132 |           <ErrorBoundary>
-> 133 |             <PricingTable />
+    at PricingPage (app/pricing/page.tsx:171:13)
+  169 |         <div className="bg-slate-900/20 border border-slate-900/60 rounded-3xl p-6 sm:p-1...
+  170 |           <ErrorBoundary>
+> 171 |             <PricingTable />
       |             ^
-  134 |           </ErrorBoundary>
-  135 |         </div>
-  136 |       </div> {
+  172 |           </ErrorBoundary>
+  173 |         </div>
+  174 | {
   componentStack: [32m'\n'[39m +
     [32m'    at ClerkHostRenderer (http://localhost:3000/_next/static/chunks/0xy0_%40clerk_react_dist_09w-sqz._.js:729:9)\n'[39m +
     [32m'    at push.withClerk.component (http://localhost:3000/_next/static/chunks/0xy0_%40clerk_react_dist_09w-sqz._.js:1151:35)\n'[39m +
     [32m'    at HOC (http://localhost:3000/_next/static/chunks/0xy0_%40clerk_react_dist_09w-sqz._.js:778:345)\n'[39m +
-    [32m'    at ErrorBoundary (http://localhost:3000/_next/static/chunks/_1ug9j-1._.js:22:9)\n'[39m +
+    [32m'    at ErrorBoundary (http://localhost:3000/_next/static/chunks/_0-qh-p9._.js:23:9)\n'[39m +
     [32m'    at div (<anonymous>)\n'[39m +
     [32m'    at div (<anonymous>)\n'[39m +
     [32m'    at div (<anonymous>)\n'[39m +
