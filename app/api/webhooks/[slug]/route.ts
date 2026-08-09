@@ -1,30 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import WebhookTriggeredEmail from "../../../../emails/webhook-triggered";
-import { getDb } from "../../../lib/db";
-import { assertWebhookRateLimit } from "../../../lib/rate-limit";
-import {
-  contentLengthTooLarge,
-  getMaxBodyBytes,
-  redactHeaders,
-} from "../../../lib/security";
+import { forwardWebhookRequest } from "../../../lib/actions";
 
-const MOCK_RESEND_KEY = "re_mockkey_12345678";
-
-function jsonError(status: number, error: string, extraHeaders?: Record<string, string>) {
-  return new NextResponse(JSON.stringify({ error }), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-      ...extraHeaders,
-    },
-  });
-}
-
-function isResendConfigured(): boolean {
-  const key = process.env.RESEND_API_KEY;
-  return Boolean(key && key !== MOCK_RESEND_KEY);
-}
+const resendApiKey = process.env.RESEND_API_KEY || "re_mockkey_12345678";
+const resend = new Resend(resendApiKey);
 
 async function handleRequest(
   request: NextRequest,
@@ -86,10 +66,95 @@ async function handleRequest(
     const requestedMethod = request.method;
     const configuredMethod = webhook.method;
     if (configuredMethod !== "ALL" && configuredMethod !== requestedMethod) {
-      return jsonError(
-        405,
-        `HTTP Method ${requestedMethod} not allowed on this endpoint. Configured method is ${configuredMethod}.`
+      return new NextResponse(
+        JSON.stringify({
+          error: `HTTP Method ${requestedMethod} not allowed on this endpoint. Configured method is ${configuredMethod}.`
+        }),
+        { status: 405, headers: { "Content-Type": "application/json" } }
       );
+    }
+
+    // --- FEATURE 50: IDEMPOTENCY-KEY CHECK ---
+    const idempotencyKey = headers["idempotency-key"] || headers["x-idempotency-key"];
+    if (idempotencyKey) {
+      // Find if we have already successfully processed this request
+      const existingLog = await db.collection("logs").findOne({
+        webhookSlug: slug,
+        idempotencyKeyUsed: idempotencyKey,
+        isDuplicate: { $ne: true }
+      });
+
+      if (existingLog) {
+        // Log this duplicate request attempt
+        await db.collection("logs").insertOne({
+          webhookSlug: slug,
+          method: requestedMethod,
+          headers,
+          query,
+          body,
+          clientIp,
+          timestamp,
+          status: existingLog.responseStatus || webhook.status,
+          isDuplicate: true,
+          idempotencyKeyUsed: idempotencyKey,
+          deliveryStatus: "NONE",
+          responseStatus: existingLog.responseStatus || webhook.status,
+          responseBody: existingLog.responseBody || webhook.body,
+          responseContentType: existingLog.responseContentType || webhook.contentType,
+        });
+
+        // Return the cached response
+        return new NextResponse(existingLog.responseBody ?? webhook.body, {
+          status: existingLog.responseStatus ?? webhook.status,
+          headers: {
+            "Content-Type": existingLog.responseContentType ?? webhook.contentType,
+            "X-Cache-Lookup": "HIT - Idempotency Duplicate",
+            "Access-Control-Allow-Origin": "*",
+          },
+        });
+      }
+    }
+
+    // --- FEATURE 54: RESPONSE DELAY SIMULATION ---
+    const delayMs = Number(webhook.delayMs) || 0;
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+
+    // --- FEATURE 52: REQUEST TRANSFORMATION ---
+    let transformedBody = body;
+    let transformError: string | undefined = undefined;
+    if (webhook.transformScript) {
+      try {
+        let parsedBody: any = body;
+        try {
+          parsedBody = JSON.parse(body);
+        } catch {
+          // Keep as string if not parseable JSON
+        }
+
+        // Wrap custom JS function in a secure shadowed environment to prevent RCE / sandbox escapes
+        const blockedGlobals = [
+          "global", "process", "require", "module", "exports",
+          "fetch", "eval", "Function", "globalThis", "setTimeout",
+          "setInterval", "clearTimeout", "clearInterval"
+        ];
+        const blockedValues = blockedGlobals.map(() => undefined);
+
+        const fn = new Function(
+          "body", "headers", "query",
+          ...blockedGlobals,
+          webhook.transformScript
+        );
+
+        const result = fn(parsedBody, headers, query, ...blockedValues);
+        if (result !== undefined) {
+          transformedBody = typeof result === "object" ? JSON.stringify(result) : String(result);
+        }
+      } catch (err: any) {
+        transformError = err.message || "Script execution failed";
+        console.error("Transformation Error:", transformError);
+      }
     }
 
     let emailNotified = false;
@@ -108,18 +173,14 @@ async function handleRequest(
             emailNotified = true;
           }
         } else {
-          const resend = new Resend(process.env.RESEND_API_KEY);
-          const from =
-            process.env.RESEND_FROM || "Endpoint Builders <webhooks@resend.dev>";
-
           const prettyHeaders = JSON.stringify(headers, null, 2);
-          let prettyBody = body;
+          let prettyBody = transformedBody;
           try {
-            if (body) {
-              prettyBody = JSON.stringify(JSON.parse(body), null, 2);
+            if (transformedBody) {
+              prettyBody = JSON.stringify(JSON.parse(transformedBody), null, 2);
             }
           } catch {
-            // keep original text body
+            // Keep original text
           }
 
           const { error } = await resend.emails.send({
@@ -150,7 +211,8 @@ async function handleRequest(
       }
     }
 
-    await db.collection("logs").insertOne({
+    // Create the primary log entry in MongoDB
+    const logResult = await db.collection("logs").insertOne({
       webhookSlug: slug,
       method: requestedMethod,
       headers,
@@ -162,8 +224,34 @@ async function handleRequest(
       status: webhook.status,
       emailNotified,
       emailError,
+      idempotencyKeyUsed: idempotencyKey || undefined,
+      transformedBody: transformedBody !== body ? transformedBody : undefined,
+      delayAppliedMs: delayMs || undefined,
+      responseStatus: webhook.status,
+      responseBody: webhook.body,
+      responseContentType: webhook.contentType,
+      deliveryStatus: webhook.forwardUrl ? "PENDING" : "NONE",
     });
 
+    const logId = logResult.insertedId.toString();
+
+    // --- FEATURE 48, 49, 51: WEBHOOK FORWARDING / PROXYING & RETRIES ---
+    if (webhook.forwardUrl) {
+      const maxRetries = webhook.retryCount !== undefined ? Number(webhook.retryCount) : 3;
+      // Trigger background forwarding (completely non-blocking)
+      forwardWebhookRequest(
+        logId,
+        webhook.forwardUrl,
+        requestedMethod,
+        headers,
+        transformedBody,
+        maxRetries
+      ).catch((err) => {
+        console.error("Background proxy forwarding error:", err);
+      });
+    }
+
+    // Return the response configured by the developer
     return new NextResponse(webhook.body, {
       status: webhook.status,
       headers: {

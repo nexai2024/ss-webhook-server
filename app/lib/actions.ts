@@ -2,9 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { auth } from "@clerk/nextjs/server";
-import { BILLING, getEntitlements } from "./billing";
-import { getDb } from "./db";
-import { generateEndpointSlug, normalizeSlug } from "./security";
+import { ObjectId } from "mongodb";
+
+export interface DeliveryAttempt {
+  attempt: number;
+  timestamp: string;
+  status: "SUCCESS" | "FAILED";
+  statusCode?: number;
+  error?: string;
+}
 
 export interface WebhookDefinition {
   _id?: string;
@@ -17,6 +23,11 @@ export interface WebhookDefinition {
   body: string;
   notifyEmail?: string;
   createdAt: string;
+  forwardUrl?: string;
+  retryCount?: number;
+  transformScript?: string;
+  cronSchedule?: string;
+  delayMs?: number;
 }
 
 export interface WebhookRequestLog {
@@ -30,6 +41,18 @@ export interface WebhookRequestLog {
   timestamp: string;
   emailNotified?: boolean;
   emailError?: string;
+  forwardedUrl?: string;
+  forwardStatus?: number;
+  forwardResponse?: string;
+  deliveries?: DeliveryAttempt[];
+  isDuplicate?: boolean;
+  idempotencyKeyUsed?: string;
+  transformedBody?: string;
+  delayAppliedMs?: number;
+  deliveryStatus?: "SUCCESS" | "PENDING" | "DLQ" | "NONE";
+  responseStatus?: number;
+  responseBody?: string;
+  responseContentType?: string;
 }
 
 export interface UserTierInfo {
@@ -85,9 +108,16 @@ export async function createWebhook(prevState: any, formData: FormData): Promise
     const contentType = (formData.get("contentType") as string) || "application/json";
     const body = (formData.get("body") as string) || "{\"status\": \"success\"}";
     const notifyEmail = (formData.get("notifyEmail") as string) || "";
+    const forwardUrl = (formData.get("forwardUrl") as string) || "";
+    const retryCountStr = (formData.get("retryCount") as string) || "3";
+    const transformScript = (formData.get("transformScript") as string) || "";
+    const cronSchedule = (formData.get("cronSchedule") as string) || "";
+    const delayMsStr = (formData.get("delayMs") as string) || "0";
 
     const status = Number.parseInt(statusStr, 10) || 200;
-    const entitlements = getEntitlements(has);
+    const retryCount = Number.parseInt(retryCountStr, 10) || 3;
+    const delayMs = Number.parseInt(delayMsStr, 10) || 0;
+    const isPremium = has({ plan: "premium" }) || has({ feature: "email_alerts" });
 
     const db = await getDb();
 
@@ -134,6 +164,11 @@ export async function createWebhook(prevState: any, formData: FormData): Promise
       contentType,
       body,
       notifyEmail: notifyEmail.trim() || undefined,
+      forwardUrl: forwardUrl.trim() || undefined,
+      retryCount: forwardUrl.trim() ? retryCount : undefined,
+      transformScript: transformScript.trim() || undefined,
+      cronSchedule: cronSchedule.trim() || undefined,
+      delayMs: delayMs > 0 ? delayMs : undefined,
       createdAt: new Date().toISOString(),
     };
 
@@ -347,5 +382,331 @@ export async function getDashboardAnalytics() {
       errors: 0,
       successes: 0,
     };
+  }
+}
+
+/**
+ * Helper to perform an artificial sleep / delay
+ */
+export async function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Forwards a request to forwardUrl with exponential backoff retries.
+ * Updates the log document in MongoDB.
+ */
+export async function forwardWebhookRequest(
+  logId: string,
+  forwardUrl: string,
+  method: string,
+  headers: Record<string, string>,
+  body: string,
+  maxRetries = 3
+): Promise<{ success: boolean; lastStatus?: number; lastError?: string; attempts: DeliveryAttempt[] }> {
+  const attempts: DeliveryAttempt[] = [];
+  let success = false;
+  let lastStatus: number | undefined;
+  let lastError: string | undefined;
+
+  // Filter headers
+  const headersToIgnore = [
+    "host",
+    "connection",
+    "content-length",
+    "accept-encoding",
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+    "x-forwarded-port",
+    "x-forwarded-server",
+    "clerk-db-bootstrap"
+  ];
+  const cleanHeaders: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (!headersToIgnore.includes(key.toLowerCase())) {
+      cleanHeaders[key] = value;
+    }
+  }
+
+  for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+    const attemptTime = new Date().toISOString();
+    try {
+      // Small delay for backoff (exponential: 100ms, 300ms, 900ms)
+      if (attempt > 1) {
+        const delay = 100 * Math.pow(3, attempt - 2);
+        await sleep(delay);
+      }
+
+      const res = await fetch(forwardUrl, {
+        method,
+        headers: cleanHeaders,
+        body: method !== "GET" && method !== "HEAD" ? body : undefined,
+        // Short timeout
+        signal: AbortSignal.timeout(5000),
+      });
+
+      lastStatus = res.status;
+      const text = await res.text();
+      const isOk = res.status >= 200 && res.status < 300;
+
+      attempts.push({
+        attempt,
+        timestamp: attemptTime,
+        status: isOk ? "SUCCESS" : "FAILED",
+        statusCode: res.status,
+        error: isOk ? undefined : `Status code ${res.status}: ${text.substring(0, 100)}`,
+      });
+
+      if (isOk) {
+        success = true;
+        break;
+      } else {
+        lastError = `Status ${res.status}`;
+      }
+    } catch (err: any) {
+      lastError = err.message || "Fetch failed";
+      attempts.push({
+        attempt,
+        timestamp: attemptTime,
+        status: "FAILED",
+        error: lastError,
+      });
+    }
+  }
+
+  // Update DB
+  try {
+    const client = await clientPromise;
+    const db = client.db("dynamic-webhook-app");
+    const deliveryStatus = success ? "SUCCESS" : "DLQ";
+
+    await db.collection("logs").updateOne(
+      { _id: new ObjectId(logId) },
+      {
+        $set: {
+          forwardedUrl: forwardUrl,
+          forwardStatus: lastStatus,
+          forwardResponse: attempts[attempts.length - 1]?.error || "Success",
+          deliveries: attempts,
+          deliveryStatus,
+        },
+      }
+    );
+  } catch (dbErr) {
+    console.error("Failed to update forward logs in DB", dbErr);
+  }
+
+  return { success, lastStatus, lastError, attempts };
+}
+
+/**
+ * Retrieves all DLQ logs for the authenticated user's webhooks.
+ */
+export async function getDLQLogs(): Promise<WebhookRequestLog[]> {
+  try {
+    const { userId } = await auth();
+    if (!userId) return [];
+
+    const client = await clientPromise;
+    const db = client.db("dynamic-webhook-app");
+
+    // Get user's webhooks slugs
+    const userWebhooks = await db.collection("webhooks").find({ userId }).toArray();
+    const userSlugs = userWebhooks.map((w) => w.slug);
+
+    if (userSlugs.length === 0) return [];
+
+    const docs = await db
+      .collection("logs")
+      .find({ webhookSlug: { $in: userSlugs }, deliveryStatus: "DLQ" })
+      .sort({ timestamp: -1 })
+      .toArray();
+
+    return docs.map((doc) => ({
+      _id: doc._id.toString(),
+      webhookSlug: doc.webhookSlug,
+      method: doc.method,
+      headers: doc.headers || {},
+      query: doc.query || {},
+      body: doc.body || "",
+      clientIp: doc.clientIp || "",
+      timestamp: doc.timestamp,
+      emailNotified: doc.emailNotified,
+      emailError: doc.emailError,
+      forwardedUrl: doc.forwardedUrl,
+      forwardStatus: doc.forwardStatus,
+      forwardResponse: doc.forwardResponse,
+      deliveries: doc.deliveries || [],
+      deliveryStatus: doc.deliveryStatus,
+    })) as WebhookRequestLog[];
+  } catch (e) {
+    console.error("Error fetching DLQ logs", e);
+    return [];
+  }
+}
+
+/**
+ * Manually re-drives/replays a DLQ request log to its configured forwardUrl.
+ */
+export async function redriveDLQPayload(logId: string) {
+  try {
+    const { userId } = await auth();
+    if (!userId) return { error: "Unauthorized. Please sign in." };
+
+    const client = await clientPromise;
+    const db = client.db("dynamic-webhook-app");
+
+    // Fetch the log
+    const log = await db.collection("logs").findOne({ _id: new ObjectId(logId) });
+    if (!log) return { error: "Log entry not found." };
+
+    // Verify ownership of the webhook
+    const webhook = await db.collection("webhooks").findOne({ slug: log.webhookSlug, userId });
+    if (!webhook) return { error: "Webhook not found or access denied." };
+
+    const forwardUrl = webhook.forwardUrl;
+    if (!forwardUrl) return { error: "No forward URL configured for this webhook." };
+
+    // Reset status to pending before retrying
+    await db.collection("logs").updateOne(
+      { _id: new ObjectId(logId) },
+      { $set: { deliveryStatus: "PENDING" } }
+    );
+
+    const maxRetries = webhook.retryCount !== undefined ? webhook.retryCount : 3;
+
+    // Trigger forwarding attempt
+    const result = await forwardWebhookRequest(
+      logId,
+      forwardUrl,
+      log.method,
+      log.headers,
+      log.transformedBody || log.body,
+      maxRetries
+    );
+
+    revalidatePath("/");
+
+    if (result.success) {
+      return { data: "Re-drive successful!" };
+    } else {
+      return { error: `Re-drive attempt failed: ${result.lastError}` };
+    }
+  } catch (e: any) {
+    console.error("Error running re-drive", e);
+    return { error: e.message || "Failed to execute re-drive" };
+  }
+}
+
+/**
+ * Deletes a list of dynamic webhooks and all associated logs in bulk.
+ */
+export async function deleteWebhooksBatch(slugs: string[]) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return { error: "Unauthorized. Please sign in." };
+    }
+
+    const client = await clientPromise;
+    const db = client.db("dynamic-webhook-app");
+
+    // Check ownership for all requested slugs
+    const userWebhooks = await db
+      .collection("webhooks")
+      .find({ slug: { $in: slugs }, userId })
+      .toArray();
+
+    const allowedSlugs = userWebhooks.map((w) => w.slug);
+    if (allowedSlugs.length === 0) {
+      return { error: "No matching webhooks found or access denied." };
+    }
+
+    await Promise.all([
+      db.collection("webhooks").deleteMany({ slug: { $in: allowedSlugs }, userId }),
+      db.collection("logs").deleteMany({ webhookSlug: { $in: allowedSlugs } }),
+    ]);
+
+    revalidatePath("/");
+    return { data: `Successfully deleted ${allowedSlugs.length} endpoints.` };
+  } catch (e: any) {
+    return { error: e.message || "Failed to bulk delete webhooks." };
+  }
+}
+
+/**
+ * Returns webhook configurations in JSON format for backup or migration.
+ */
+export async function exportWebhooksBatch(slugs: string[]): Promise<WebhookDefinition[]> {
+  try {
+    const { userId } = await auth();
+    if (!userId) return [];
+
+    const client = await clientPromise;
+    const db = client.db("dynamic-webhook-app");
+
+    // Fetch and verify ownership
+    const docs = await db
+      .collection("webhooks")
+      .find({ slug: { $in: slugs }, userId })
+      .toArray();
+
+    return docs.map((doc) => ({
+      _id: doc._id.toString(),
+      userId: doc.userId,
+      name: doc.name,
+      slug: doc.slug,
+      method: doc.method,
+      status: doc.status,
+      contentType: doc.contentType,
+      body: doc.body,
+      notifyEmail: doc.notifyEmail,
+      forwardUrl: doc.forwardUrl,
+      retryCount: doc.retryCount,
+      transformScript: doc.transformScript,
+      cronSchedule: doc.cronSchedule,
+      delayMs: doc.delayMs,
+      createdAt: doc.createdAt,
+    })) as WebhookDefinition[];
+  } catch (e) {
+    console.error("Failed to export webhooks", e);
+    return [];
+  }
+}
+
+/**
+ * Updates response status codes for webhooks in bulk.
+ */
+export async function updateWebhooksStatusBatch(slugs: string[], status: number) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return { error: "Unauthorized. Please sign in." };
+    }
+
+    const client = await clientPromise;
+    const db = client.db("dynamic-webhook-app");
+
+    // Find and verify ownership
+    const userWebhooks = await db
+      .collection("webhooks")
+      .find({ slug: { $in: slugs }, userId })
+      .toArray();
+
+    const allowedSlugs = userWebhooks.map((w) => w.slug);
+    if (allowedSlugs.length === 0) {
+      return { error: "No matching webhooks found or access denied." };
+    }
+
+    await db.collection("webhooks").updateMany(
+      { slug: { $in: allowedSlugs }, userId },
+      { $set: { status } }
+    );
+
+    revalidatePath("/");
+    return { data: `Updated status to ${status} for ${allowedSlugs.length} endpoints.` };
+  } catch (e: any) {
+    return { error: e.message || "Failed to update webhooks status." };
   }
 }
