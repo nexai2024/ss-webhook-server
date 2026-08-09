@@ -1,36 +1,60 @@
 import { type NextRequest, NextResponse } from "next/server";
-import clientPromise from "../../../lib/mongodb";
 import { Resend } from "resend";
 import WebhookTriggeredEmail from "../../../../emails/webhook-triggered";
+import { getDb } from "../../../lib/db";
+import { assertWebhookRateLimit } from "../../../lib/rate-limit";
+import {
+  contentLengthTooLarge,
+  getMaxBodyBytes,
+  redactHeaders,
+} from "../../../lib/security";
 
-const resendApiKey = process.env.RESEND_API_KEY || "re_mockkey_12345678";
-const resend = new Resend(resendApiKey);
+const MOCK_RESEND_KEY = "re_mockkey_12345678";
 
-// A catch-all handling style for dynamic route in Next.js 16+ App Router
+function jsonError(status: number, error: string, extraHeaders?: Record<string, string>) {
+  return new NextResponse(JSON.stringify({ error }), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      ...extraHeaders,
+    },
+  });
+}
+
+function isResendConfigured(): boolean {
+  const key = process.env.RESEND_API_KEY;
+  return Boolean(key && key !== MOCK_RESEND_KEY);
+}
+
 async function handleRequest(
   request: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params;
   const timestamp = new Date().toISOString();
+  const maxBodyBytes = getMaxBodyBytes();
 
-  // Extract headers
-  const headers: Record<string, string> = {};
+  if (contentLengthTooLarge(request.headers.get("content-length"), maxBodyBytes)) {
+    return jsonError(413, `Request body exceeds limit of ${maxBodyBytes} bytes.`);
+  }
+
+  const rawHeaders: Record<string, string> = {};
   request.headers.forEach((value, key) => {
-    headers[key] = value;
+    rawHeaders[key] = value;
   });
+  const headers = redactHeaders(rawHeaders);
 
-  // Extract query search params
   const { searchParams } = new URL(request.url);
   const query: Record<string, string> = {};
   searchParams.forEach((value, key) => {
     query[key] = value;
   });
 
-  // Extract client IP address
-  const clientIp = request.headers.get("x-forwarded-for") || "127.0.0.1";
+  const clientIp =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    "127.0.0.1";
 
-  // Extract payload body
   let body = "";
   try {
     body = await request.text();
@@ -38,42 +62,56 @@ async function handleRequest(
     console.warn("Failed to read body text from request:", err);
   }
 
-  try {
-    const client = await clientPromise;
-    const db = client.db("dynamic-webhook-app");
+  if (new TextEncoder().encode(body).length > maxBodyBytes) {
+    return jsonError(413, `Request body exceeds limit of ${maxBodyBytes} bytes.`);
+  }
 
-    // Look up the webhook definition by slug
-    const webhook = await db.collection("webhooks").findOne({ slug });
-    if (!webhook) {
-      return new NextResponse(
-        JSON.stringify({ error: `Webhook endpoint '/api/webhooks/${slug}' not found.` }),
-        { status: 404, headers: { "Content-Type": "application/json" } }
-      );
+  try {
+    const db = await getDb();
+
+    const rate = await assertWebhookRateLimit(db, slug);
+    if (!rate.allowed) {
+      return jsonError(429, "Rate limit exceeded for this endpoint. Try again shortly.", {
+        "Retry-After": String(rate.retryAfterSec),
+        "X-RateLimit-Limit": String(rate.limit),
+        "X-RateLimit-Remaining": "0",
+      });
     }
 
-    // Verify configured HTTP Method restrictions
+    const webhook = await db.collection("webhooks").findOne({ slug });
+    if (!webhook) {
+      return jsonError(404, `Webhook endpoint '/api/webhooks/${slug}' not found.`);
+    }
+
     const requestedMethod = request.method;
     const configuredMethod = webhook.method;
     if (configuredMethod !== "ALL" && configuredMethod !== requestedMethod) {
-      return new NextResponse(
-        JSON.stringify({
-          error: `HTTP Method ${requestedMethod} not allowed on this endpoint. Configured method is ${configuredMethod}.`
-        }),
-        { status: 405, headers: { "Content-Type": "application/json" } }
+      return jsonError(
+        405,
+        `HTTP Method ${requestedMethod} not allowed on this endpoint. Configured method is ${configuredMethod}.`
       );
     }
 
     let emailNotified = false;
-    let emailError: string | undefined = undefined;
+    let emailError: string | undefined;
 
-    // Send email alert via Resend if email notifications are enabled
     if (webhook.notifyEmail) {
       try {
-        if (!process.env.RESEND_API_KEY || process.env.RESEND_API_KEY === "re_mockkey_12345678") {
-          console.log(`[MOCK EMAIL] Webhook ${webhook.name} was triggered. Sending email to ${webhook.notifyEmail}`);
-          emailNotified = true;
+        if (!isResendConfigured()) {
+          if (process.env.NODE_ENV === "production") {
+            emailError = "Email delivery is not configured in production";
+            console.error(emailError);
+          } else {
+            console.log(
+              `[MOCK EMAIL] Webhook ${webhook.name} was triggered. Would notify ${webhook.notifyEmail}`
+            );
+            emailNotified = true;
+          }
         } else {
-          // Format headers and body prettily for display in the email
+          const resend = new Resend(process.env.RESEND_API_KEY);
+          const from =
+            process.env.RESEND_FROM || "Endpoint Builders <webhooks@resend.dev>";
+
           const prettyHeaders = JSON.stringify(headers, null, 2);
           let prettyBody = body;
           try {
@@ -85,9 +123,9 @@ async function handleRequest(
           }
 
           const { error } = await resend.emails.send({
-            from: "Webhooks <webhooks@resend.dev>",
+            from,
             to: [webhook.notifyEmail],
-            subject: `🚨 Webhook Alert: ${webhook.name} triggered!`,
+            subject: `Endpoint Builders: ${webhook.name} triggered`,
             react: WebhookTriggeredEmail({
               slug,
               name: webhook.name,
@@ -106,13 +144,12 @@ async function handleRequest(
             emailNotified = true;
           }
         }
-      } catch (err: any) {
-        emailError = err.message || "Failed to send email alert";
+      } catch (err: unknown) {
+        emailError = err instanceof Error ? err.message : "Failed to send email alert";
         console.error("Resend execution error:", err);
       }
     }
 
-    // Insert incoming request log into MongoDB
     await db.collection("logs").insertOne({
       webhookSlug: slug,
       method: requestedMethod,
@@ -121,25 +158,24 @@ async function handleRequest(
       body,
       clientIp,
       timestamp,
+      createdAt: new Date(),
       status: webhook.status,
       emailNotified,
       emailError,
     });
 
-    // Return the response configured by the developer
     return new NextResponse(webhook.body, {
       status: webhook.status,
       headers: {
         "Content-Type": webhook.contentType,
-        "Access-Control-Allow-Origin": "*", // allow cross-origin triggers
+        "Access-Control-Allow-Origin": "*",
+        "X-RateLimit-Limit": String(rate.limit),
+        "X-RateLimit-Remaining": String(rate.remaining),
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Fatal error handling webhook execution log", error);
-    return new NextResponse(
-      JSON.stringify({ error: "Internal Server Error in dynamic route.", details: error.message }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+    return jsonError(500, "Internal server error");
   }
 }
 

@@ -1,5 +1,5 @@
 {
-  "name": "resend-vercel-example",
+  "name": "endpoint-builders",
   "private": true,
   "packageManager": "pnpm@11.3.0",
   "scripts": {
@@ -11,7 +11,7 @@
     "lint": "biome check ."
   },
   "dependencies": {
-    "@clerk/nextjs": "^7.5.22",
+    "@clerk/nextjs": "^7.7.1",
     "@react-email/ui": "6.0.0",
     "clsx": "2.1.1",
     "lucide-react": "^1.25.0",

@@ -1,5 +1,12 @@
 .env
 .env.local
+.env*.local
+.dev_server.log
+dev_server.log
+*.log
 .next
 node_modules
 .clerk/
+.DS_Store
+tsconfig.tsbuildinfo
+package-lock.json

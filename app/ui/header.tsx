@@ -2,6 +2,7 @@
 
 import { SignInButton, SignUpButton, UserButton, Show } from "@clerk/nextjs";
 import Link from "next/link";
+import { BILLING } from "../lib/billing";
 
 export default function Header() {
   return (
@@ -14,7 +15,7 @@ export default function Header() {
                 ⚡
               </span>
               <span className="bg-gradient-to-r from-indigo-400 via-sky-400 to-emerald-400 bg-clip-text text-transparent">
-                Endpoint Hub
+                Endpoint Builders
               </span>
             </Link>
             <div className="hidden md:flex items-center gap-6">
@@ -53,10 +54,33 @@ export default function Header() {
             </Show>
             <Show when="signed-in">
               <div className="flex items-center gap-4">
-                <Link href="/pricing" className="hidden sm:inline-flex items-center text-xs text-indigo-400 bg-indigo-500/10 px-2.5 py-1 rounded-full border border-indigo-500/20 font-medium hover:bg-indigo-500/20 transition-all">
-                  My Subscription
-                </Link>
-                <UserButton />
+                <Show
+                  when={{ plan: BILLING.plan }}
+                  fallback={
+                    <Link
+                      href="/pricing"
+                      className="hidden sm:inline-flex items-center text-xs text-indigo-400 bg-indigo-500/10 px-2.5 py-1 rounded-full border border-indigo-500/20 font-medium hover:bg-indigo-500/20 transition-all"
+                    >
+                      Upgrade
+                    </Link>
+                  }
+                >
+                  <Link
+                    href="/pricing"
+                    className="hidden sm:inline-flex items-center text-xs text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20 font-medium hover:bg-emerald-500/20 transition-all"
+                  >
+                    Premium
+                  </Link>
+                </Show>
+                <UserButton>
+                  <UserButton.MenuItems>
+                    <UserButton.Link
+                      label="Manage billing"
+                      labelIcon={<span className="text-[10px]">$</span>}
+                      href="/pricing"
+                    />
+                  </UserButton.MenuItems>
+                </UserButton>
               </div>
             </Show>
           </div>

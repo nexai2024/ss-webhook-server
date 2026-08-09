@@ -1,8 +1,10 @@
 "use server";
 
-import clientPromise from "./mongodb";
 import { revalidatePath } from "next/cache";
 import { auth } from "@clerk/nextjs/server";
+import { BILLING, getEntitlements } from "./billing";
+import { getDb } from "./db";
+import { generateEndpointSlug, normalizeSlug } from "./security";
 
 export interface WebhookDefinition {
   _id?: string;
@@ -48,19 +50,21 @@ export async function getUserTier(): Promise<UserTierInfo> {
       return { isPremium: false, activePlan: "Guest", endpointsCount: 0 };
     }
 
-    const client = await clientPromise;
-    const db = client.db("dynamic-webhook-app");
+    const db = await getDb();
     const count = await db.collection("webhooks").countDocuments({ userId });
+    const entitlements = getEntitlements(has);
 
-    const isPremium = has({ plan: "premium" }) || has({ feature: "email_alerts" });
     return {
-      isPremium,
-      activePlan: isPremium ? "Premium Plan" : "Free Plan",
+      isPremium:
+        entitlements.isPremium ||
+        entitlements.canCreateUnlimitedEndpoints ||
+        entitlements.canUseEmailAlerts,
+      activePlan: entitlements.activePlan,
       endpointsCount: count,
     };
   } catch (e) {
     console.error("Error fetching user tier info", e);
-    return { isPremium: false, activePlan: "Free Plan", endpointsCount: 0 };
+    return { isPremium: false, activePlan: "Cloud Free", endpointsCount: 0 };
   }
 }
 
@@ -83,47 +87,45 @@ export async function createWebhook(prevState: any, formData: FormData): Promise
     const notifyEmail = (formData.get("notifyEmail") as string) || "";
 
     const status = Number.parseInt(statusStr, 10) || 200;
-    const isPremium = has({ plan: "premium" }) || has({ feature: "email_alerts" });
+    const entitlements = getEntitlements(has);
 
-    const client = await clientPromise;
-    const db = client.db("dynamic-webhook-app");
+    const db = await getDb();
 
-    // Tier 1 restriction: Max 2 webhooks on free tier
     const count = await db.collection("webhooks").countDocuments({ userId });
-    if (!isPremium && count >= 2) {
+    if (!entitlements.canCreateUnlimitedEndpoints && count >= BILLING.freeEndpointLimit) {
       return {
-        error: "Free tier limit reached. You can only create up to 2 webhooks. Please upgrade to Premium."
+        error: `Free tier limit reached. You can only create up to ${BILLING.freeEndpointLimit} endpoints. Upgrade to Cloud Premium for unlimited endpoints.`,
       };
     }
 
-    // Tier 2 restriction: Email alerts require Premium plan
-    if (notifyEmail.trim() && !isPremium) {
+    if (notifyEmail.trim() && !entitlements.canUseEmailAlerts) {
       return {
-        error: "Instant Email alerts are a Premium feature. Please upgrade your subscription to enable this feature."
+        error: "Instant email alerts require Cloud Premium (or the email_alerts feature). Upgrade on the Pricing page.",
       };
     }
 
-    // Tier 3 restriction: Custom HTTP status (other than 200, 201, 204) requires Premium plan
-    if (!isPremium && status !== 200 && status !== 201 && status !== 204) {
+    const freeStatuses: readonly number[] = BILLING.freeAllowedStatuses;
+    if (!entitlements.canUseCustomStatus && !freeStatuses.includes(status)) {
       return {
-        error: "Custom response statuses (other than 200/201/204) require a Premium subscription."
+        error: "Custom response statuses (other than 200/201/204) require Cloud Premium. Upgrade on the Pricing page.",
       };
     }
 
-    // Normalize slug: lowercase and hyphenated or auto-generate if empty
     if (!slug) {
-      slug = Math.random().toString(36).substring(2, 8);
+      slug = generateEndpointSlug();
     } else {
-      slug = slug.trim().toLowerCase().replace(/[^a-z0-9-_]/g, "-");
+      slug = normalizeSlug(slug);
+      if (!slug) {
+        return { error: "Invalid endpoint slug. Use letters, numbers, hyphens, or underscores." };
+      }
     }
 
-    // Check if slug is already taken globally
     const existing = await db.collection("webhooks").findOne({ slug });
     if (existing) {
       return { error: `The endpoint path '/api/webhooks/${slug}' is already taken. Please choose a different one.` };
     }
 
-    const newWebhook: any = {
+    const newWebhook = {
       userId,
       name,
       slug,
@@ -135,13 +137,26 @@ export async function createWebhook(prevState: any, formData: FormData): Promise
       createdAt: new Date().toISOString(),
     };
 
-    await db.collection("webhooks").insertOne(newWebhook);
+    try {
+      await db.collection("webhooks").insertOne(newWebhook);
+    } catch (insertErr: unknown) {
+      // Unique index race
+      if (
+        typeof insertErr === "object" &&
+        insertErr !== null &&
+        "code" in insertErr &&
+        (insertErr as { code?: number }).code === 11000
+      ) {
+        return { error: `The endpoint path '/api/webhooks/${slug}' is already taken. Please choose a different one.` };
+      }
+      throw insertErr;
+    }
 
     revalidatePath("/");
     return { data: newWebhook as WebhookDefinition };
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error("Error creating webhook configuration", e);
-    return { error: e.message || "An unexpected error occurred." };
+    return { error: e instanceof Error ? e.message : "An unexpected error occurred." };
   }
 }
 
@@ -153,8 +168,7 @@ export async function getWebhooks(): Promise<WebhookDefinition[]> {
     const { userId } = await auth();
     if (!userId) return [];
 
-    const client = await clientPromise;
-    const db = client.db("dynamic-webhook-app");
+    const db = await getDb();
     const docs = await db
       .collection("webhooks")
       .find({ userId })
@@ -188,8 +202,7 @@ export async function getWebhookLogs(slug: string): Promise<WebhookRequestLog[]>
     const { userId } = await auth();
     if (!userId) return [];
 
-    const client = await clientPromise;
-    const db = client.db("dynamic-webhook-app");
+    const db = await getDb();
 
     // Enforce ownership check before fetching logs
     const webhook = await db.collection("webhooks").findOne({ slug, userId });
@@ -230,8 +243,7 @@ export async function deleteWebhook(slug: string) {
       return { error: "Unauthorized. Please sign in." };
     }
 
-    const client = await clientPromise;
-    const db = client.db("dynamic-webhook-app");
+    const db = await getDb();
 
     // Check ownership
     const webhook = await db.collection("webhooks").findOne({ slug, userId });
@@ -246,8 +258,8 @@ export async function deleteWebhook(slug: string) {
 
     revalidatePath("/");
     return { data: "Webhook and its logs deleted successfully." };
-  } catch (e: any) {
-    return { error: e.message || "Failed to delete webhook." };
+  } catch (e: unknown) {
+    return { error: e instanceof Error ? e.message : "Failed to delete webhook." };
   }
 }
 
@@ -261,8 +273,7 @@ export async function clearWebhookLogs(slug: string) {
       return { error: "Unauthorized. Please sign in." };
     }
 
-    const client = await clientPromise;
-    const db = client.db("dynamic-webhook-app");
+    const db = await getDb();
 
     // Check ownership
     const webhook = await db.collection("webhooks").findOne({ slug, userId });
@@ -273,8 +284,8 @@ export async function clearWebhookLogs(slug: string) {
     await db.collection("logs").deleteMany({ webhookSlug: slug });
     revalidatePath("/");
     return { data: "Logs cleared successfully." };
-  } catch (e: any) {
-    return { error: e.message || "Failed to clear logs." };
+  } catch (e: unknown) {
+    return { error: e instanceof Error ? e.message : "Failed to clear logs." };
   }
 }
 
@@ -293,8 +304,7 @@ export async function getDashboardAnalytics() {
       };
     }
 
-    const client = await clientPromise;
-    const db = client.db("dynamic-webhook-app");
+    const db = await getDb();
 
     // Find all webhooks for this user
     const userWebhooks = await db.collection("webhooks").find({ userId }).toArray();

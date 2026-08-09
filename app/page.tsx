@@ -56,7 +56,7 @@ export default function Page() {
   });
   const [tierInfo, setTierInfo] = React.useState({
     isPremium: false,
-    activePlan: "Free Plan",
+    activePlan: "Cloud Free",
     endpointsCount: 0,
   });
   const [loading, setLoading] = React.useState(true);
@@ -133,7 +133,7 @@ export default function Page() {
     if ("error" in state) {
       toast.error(state.error);
     } else if ("data" in state) {
-      toast.success(`Dynamic Webhook '${state.data.name}' configured successfully!`);
+      toast.success(`Endpoint '${state.data.name}' configured successfully!`);
       setSelectedSlug(state.data.slug);
       fetchDashboardData();
     }
@@ -154,7 +154,7 @@ export default function Page() {
           method: testMethod,
           headers: {
             "Content-Type": "application/json",
-            "X-Test-Sender": "Dynamic Webhooks Test Client"
+            "X-Test-Sender": "Endpoint Builders Test Client"
           },
           body: testMethod !== "GET" ? JSON.stringify({
             test: true,
@@ -236,11 +236,15 @@ export default function Page() {
           </div>
 
           <h1 className="text-5xl sm:text-6xl font-extrabold tracking-tight leading-none bg-gradient-to-r from-indigo-400 via-sky-400 to-emerald-400 bg-clip-text text-transparent">
-            Unrate-limited Webhook Inspection
+            Endpoint Builders
           </h1>
 
+          <p className="text-xl text-slate-200 font-semibold max-w-2xl mx-auto">
+            Build webhook endpoints. Inspect every request. No rate limits.
+          </p>
+
           <p className="text-lg text-slate-400 max-w-2xl mx-auto font-medium leading-relaxed">
-            Tired of paying for expensive enterprise infrastructure or hitting Webhook.site rate limits just to see what your webhooks are sending you? Get unlimited requests, MongoDB storage, and Resend notifications on your own server for free under MIT, or scale instantly with our Managed SaaS.
+            Tired of paying for expensive enterprise infrastructure or hitting Webhook.site rate limits? Get unlimited requests, MongoDB storage, and Resend notifications on your own server for free under MIT — or scale instantly with managed hosting at endpoint.builders.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
@@ -299,7 +303,7 @@ export default function Page() {
                 <Code className="h-4 w-4 text-indigo-400" /> Webhook.site alternative
               </h4>
               <p className="text-xs text-slate-400 mt-1 max-w-xl">
-                Unlike closed-source tools with restrictive tiers, Endpoint Hub gives you absolute control. Inspect your incoming payloads locally without paying a dime for enterprise infrastructure.
+                Unlike closed-source tools with restrictive tiers, Endpoint Builders gives you absolute control. Inspect your incoming payloads locally without paying a dime for enterprise infrastructure.
               </p>
             </div>
             <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="shrink-0 text-xs text-indigo-400 font-semibold hover:text-indigo-300 transition-colors flex items-center gap-1">
@@ -324,7 +328,7 @@ export default function Page() {
                 <Terminal className="h-6 w-6" />
               </span>
               <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-400 via-sky-400 to-emerald-400 bg-clip-text text-transparent">
-                Dynamic Endpoint Hub
+                Endpoint Builders
               </h1>
               {/* Subscription Plan Badge */}
               <span className={clsx(
@@ -348,7 +352,7 @@ export default function Page() {
               className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-slate-300 bg-slate-900 border border-slate-800 rounded-lg hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors"
             >
               <RefreshCw className={clsx("h-4 w-4", loading && "animate-spin")} />
-              Refresh Hub
+              Refresh
             </button>
           </div>
         </header>
@@ -406,7 +410,7 @@ export default function Page() {
             <div className="p-6 border-b border-slate-800 bg-slate-900/40">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <Plus className="h-5 w-5 text-indigo-400" />
-                Define Dynamic Webhook
+                Build Endpoint
               </h2>
               <p className="text-xs text-slate-400 mt-1">Configure path, routing methods, and mock HTTP responses.</p>
             </div>
@@ -415,7 +419,7 @@ export default function Page() {
               {/* Webhook Name */}
               <div className="space-y-1.5">
                 <label htmlFor="name" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
-                  Webhook Name
+                  Endpoint Name
                 </label>
                 <input
                   id="name"
@@ -815,7 +819,7 @@ function SubmitButton() {
       ) : (
         <>
           <Plus className="h-4 w-4" />
-          Create Dynamic Endpoint
+          Create Endpoint
         </>
       )}
     </button>

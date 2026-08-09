@@ -88,7 +88,7 @@ export const WebhookTriggeredEmail = ({
             <Hr className="border border-solid border-slate-800 my-[26px] mx-0 w-full" />
 
             <Text className="text-slate-500 text-[12px] leading-[20px] text-center">
-              This automated developer alert was sent via Resend on behalf of your Next.js Webhook Platform. You can disable these email notifications in your Webhook Dashboard configuration.
+              This automated alert was sent by Endpoint Builders (endpoint.builders). You can disable these notifications in your dashboard.
             </Text>
           </Container>
         </Body>

@@ -1,20 +1,46 @@
-# Resend with React Email + Next.js + Vercel
+# Endpoint Builders
 
-This example shows how to use Resend with React Email + Next.js + Vercel.
+Build, inspect, and manage webhook endpoints — unlimited and developer-first.
+
+**Domain:** [endpoint.builders](https://endpoint.builders)
 
 ## Deploy your own
 
-Deploy the example using [Vercel](https://vercel.com):
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/resend/resend-vercel-example&project-name=resend-vercel-example&repository-name=resend-vercel-example&products=%5B%7B%22type%22%3A%22integration%22%2C%22integrationSlug%22%3A%22resend%22%2C%22productSlug%22%3A%22resend-email%22%2C%22protocol%22%3A%22messaging%22%7D%5D)
+Deploy using [Vercel](https://vercel.com) with your MongoDB, Clerk, and Resend credentials.
 
 ## Instructions
 
-1. Define environment variables in `.env` file.
+1. Copy `.env.example` to `.env` / `.env.local` and fill in values (Clerk, MongoDB, Resend).
 
 ```sh
 cp .env.example .env
 ```
+
+See `.env.example` for all required variables. In production you must set `MONGODB_URI`, Clerk live keys, `RESEND_API_KEY`, and a verified `RESEND_FROM` address.
+
+## Clerk Billing
+
+Billing is enabled for users on the linked **Endpoint Builders** Clerk app.
+
+| Plan slug | Features (entitlements) |
+|-----------|-------------------------|
+| `free_user` | `2_endpoints`, `standard_http_200_201_204_responses` |
+| `cloud_premium` | `_unlimited_cloud_endpoints`, `custom_error_statuses_4xx_5xx_etc_`, `instant_resend_react_email_alerts`, `zero_hosting_or_db_maintenance` |
+
+Server gates use `has({ plan: 'cloud_premium' })` / the feature slugs above (see `app/lib/billing.ts`).
+
+```sh
+npx clerk auth login
+npx clerk link --app app_3301R6yZxYJ4BbA6D2CeQVVEg42
+npx clerk enable billing --for users --yes
+# Pull / push plan catalog:
+npx clerk config pull --keys billing --output clerk/billing.json
+npx clerk config patch --file clerk/billing.json --yes
+```
+
+Optional: register `https://<domain>/api/clerk/webhooks` in Clerk Dashboard → Webhooks and set `CLERK_WEBHOOK_SIGNING_SECRET`.
+
+Visit `/pricing` — `<PricingTable />` opens Clerk’s checkout drawer.
 
 2. Install dependencies:
 
@@ -30,13 +56,11 @@ pnpm install
 npm run dev
 ```
 
-4. Run React Email locally:
+4. Run React Email locally (optional):
 
 ```sh
 npm run email
 ```
-
-5. Submit form
 
 ## License
 

@@ -1,0 +1,94 @@
+{
+  "billing": {
+    "features": {
+      "2_endpoints": {
+        "avatar_url": "",
+        "description": "2 end points",
+        "include_in_jwt": true,
+        "jwt_value": "",
+        "name": "2 Endpoints",
+        "publicly_visible": true
+      },
+      "_unlimited_cloud_endpoints": {
+        "avatar_url": "",
+        "description": "**Unlimited** cloud endpoints",
+        "include_in_jwt": true,
+        "jwt_value": "",
+        "name": "**Unlimited** cloud endpoints",
+        "publicly_visible": true
+      },
+      "custom_error_statuses_4xx_5xx_etc_": {
+        "avatar_url": "",
+        "description": "Custom error statuses (4xx, 5xx, etc.)",
+        "include_in_jwt": true,
+        "jwt_value": "",
+        "name": "Custom error statuses (4xx, 5xx, etc.)",
+        "publicly_visible": true
+      },
+      "instant_resend_react_email_alerts": {
+        "avatar_url": "",
+        "description": "Instant Resend & React Email alerts\n",
+        "include_in_jwt": true,
+        "jwt_value": "",
+        "name": "Instant Resend & React Email alerts",
+        "publicly_visible": true
+      },
+      "standard_http_200_201_204_responses": {
+        "avatar_url": "",
+        "description": "Standard HTTP 200/201/204 responses",
+        "include_in_jwt": true,
+        "jwt_value": "",
+        "name": "Standard HTTP 200/201/204 responses",
+        "publicly_visible": true
+      },
+      "zero_hosting_or_db_maintenance": {
+        "avatar_url": "",
+        "description": "Zero hosting or DB maintenance\n",
+        "include_in_jwt": true,
+        "jwt_value": "",
+        "name": "Zero hosting or DB maintenance",
+        "publicly_visible": true
+      }
+    },
+    "free_trial_requires_payment_method": true,
+    "organization_enabled": false,
+    "plans": {
+      "cloud_premium": {
+        "amount": 900,
+        "annual_monthly_amount": 800,
+        "currency": "usd",
+        "description": "Unlimited managed scale and absolute control.\n\n",
+        "features": [
+          "_unlimited_cloud_endpoints",
+          "custom_error_statuses_4xx_5xx_etc_",
+          "instant_resend_react_email_alerts",
+          "zero_hosting_or_db_maintenance"
+        ],
+        "free_trial_days": 14,
+        "free_trial_enabled": true,
+        "is_recurring": true,
+        "name": "Cloud Premium",
+        "payer_type": "user",
+        "publicly_visible": true
+      },
+      "free_user": {
+        "amount": 0,
+        "annual_monthly_amount": 0,
+        "currency": "",
+        "description": "",
+        "features": [
+          "2_endpoints",
+          "standard_http_200_201_204_responses"
+        ],
+        "free_trial_days": null,
+        "free_trial_enabled": false,
+        "is_recurring": true,
+        "name": "Free",
+        "payer_type": "user",
+        "publicly_visible": true
+      }
+    },
+    "user_enabled": true
+  },
+  "config_version": "v1_db2093f4"
+}

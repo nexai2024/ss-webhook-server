@@ -4,8 +4,8 @@ import { Toaster } from "./ui/toaster";
 import Header from "./ui/header";
 
 export const metadata = {
-  title: "Dynamic Endpoint Hub",
-  description: "Create dynamic, fully customizable Webhook endpoints on the fly.",
+  title: "Endpoint Builders",
+  description: "Build, inspect, and manage webhook endpoints — unlimited and developer-first.",
 };
 
 export default function RootLayout({
