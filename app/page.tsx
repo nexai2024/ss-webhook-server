@@ -108,7 +108,10 @@ export default function Page() {
     }
   }, []);
 
-  // Fetch all endpoints and summary stats
+  // Fetch all endpoints and summary stats.
+  // Do NOT depend on selectedSlug — that recreated this callback on every
+  // selection change, re-fetched the dashboard, and let a stale in-flight
+  // request (captured with selectedSlug === "") reset selection to the latest.
   const fetchDashboardData = React.useCallback(async () => {
     if (!isSignedIn) return;
     setLoading(true);
@@ -124,30 +127,43 @@ export default function Page() {
       setTierInfo(tier);
       setDlqLogs(dlqItems);
 
-      // Default select the first webhook if none selected
-      if (allWebhooks.length > 0 && !selectedSlug) {
-        setSelectedSlug(allWebhooks[0].slug);
-      }
+      // Keep the current selection if it still exists; otherwise default to newest
+      setSelectedSlug((current) => {
+        if (current && allWebhooks.some((w) => w.slug === current)) {
+          return current;
+        }
+        return allWebhooks[0]?.slug ?? "";
+      });
     } catch (e) {
       console.error("Failed to load dashboard data", e);
       toast.error("Failed to load webhooks dashboard");
     } finally {
       setLoading(false);
     }
-  }, [selectedSlug, isSignedIn]);
+  }, [isSignedIn]);
 
-  // Load request logs for the selected webhook
+  const selectedSlugRef = React.useRef(selectedSlug);
+  React.useEffect(() => {
+    selectedSlugRef.current = selectedSlug;
+  }, [selectedSlug]);
+
+  // Load request logs for the selected webhook (ignore stale out-of-order responses)
   const fetchLogs = React.useCallback(async (slug: string) => {
     if (!slug || !isSignedIn) return;
     setLoadingLogs(true);
     try {
       const logList = await getWebhookLogs(slug);
+      if (selectedSlugRef.current !== slug) return;
       setLogs(logList);
     } catch (e) {
       console.error("Failed to load execution logs", e);
-      toast.error("Failed to load request logs");
+      if (selectedSlugRef.current === slug) {
+        toast.error("Failed to load request logs");
+      }
     } finally {
-      setLoadingLogs(false);
+      if (selectedSlugRef.current === slug) {
+        setLoadingLogs(false);
+      }
     }
   }, [isSignedIn]);
 
@@ -772,8 +788,8 @@ export default function Page() {
                   name="body"
                   rows={4}
                   required
-                  defaultValue='{ "received": true, "status": "processed", "id": 10934 }'
-                  placeholder="Enter JSON, text, or HTML template..."
+                  defaultValue='{ "ok": true }'
+                  placeholder='e.g. { "ok": true }'
                   className="block w-full rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs font-mono text-slate-300 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>

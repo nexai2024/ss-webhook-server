@@ -17,7 +17,9 @@ export const BILLING = {
   freeAllowedStatuses: [200, 201, 204] as const,
 } as const;
 
-type HasFn = (args: { plan?: string; feature?: string }) => boolean;
+/** Compatible with Clerk `auth().has` without coupling to its overloaded types */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type HasFn = (args: any) => boolean;
 
 export type Entitlements = {
   isPremium: boolean;
@@ -28,13 +30,13 @@ export type Entitlements = {
 };
 
 export function getEntitlements(has: HasFn): Entitlements {
-  const isPremium = has({ plan: BILLING.plan });
+  const isPremium = Boolean(has({ plan: BILLING.plan }));
   const canUseEmailAlerts =
-    isPremium || has({ feature: BILLING.features.emailAlerts });
+    isPremium || Boolean(has({ feature: BILLING.features.emailAlerts }));
   const canUseCustomStatus =
-    isPremium || has({ feature: BILLING.features.customStatus });
+    isPremium || Boolean(has({ feature: BILLING.features.customStatus }));
   const canCreateUnlimitedEndpoints =
-    isPremium || has({ feature: BILLING.features.unlimitedEndpoints });
+    isPremium || Boolean(has({ feature: BILLING.features.unlimitedEndpoints }));
 
   return {
     isPremium,

@@ -2,9 +2,30 @@ import { type NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import WebhookTriggeredEmail from "../../../../emails/webhook-triggered";
 import { forwardWebhookRequest } from "../../../lib/actions";
+import { getDb } from "../../../lib/db";
+import { assertWebhookRateLimit } from "../../../lib/rate-limit";
+import {
+  contentLengthTooLarge,
+  getMaxBodyBytes,
+  redactHeaders,
+} from "../../../lib/security";
 
-const resendApiKey = process.env.RESEND_API_KEY || "re_mockkey_12345678";
-const resend = new Resend(resendApiKey);
+const MOCK_RESEND_KEY = "re_mockkey_12345678";
+
+function jsonError(status: number, error: string, extraHeaders?: Record<string, string>) {
+  return new NextResponse(JSON.stringify({ error }), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      ...extraHeaders,
+    },
+  });
+}
+
+function isResendConfigured(): boolean {
+  const key = process.env.RESEND_API_KEY;
+  return Boolean(key && key !== MOCK_RESEND_KEY);
+}
 
 async function handleRequest(
   request: NextRequest,
@@ -173,6 +194,10 @@ async function handleRequest(
             emailNotified = true;
           }
         } else {
+          const resend = new Resend(process.env.RESEND_API_KEY);
+          const from =
+            process.env.RESEND_FROM || "Endpoint Builders <webhooks@resend.dev>";
+
           const prettyHeaders = JSON.stringify(headers, null, 2);
           let prettyBody = transformedBody;
           try {

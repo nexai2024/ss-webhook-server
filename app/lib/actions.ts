@@ -3,6 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@clerk/nextjs/server";
 import { ObjectId } from "mongodb";
+import { BILLING, getEntitlements } from "./billing";
+import { getDb } from "./db";
+import { generateEndpointSlug, normalizeSlug } from "./security";
 
 export interface DeliveryAttempt {
   attempt: number;
@@ -63,6 +66,29 @@ export interface UserTierInfo {
 
 export type WebhookState = { error: string } | { data: WebhookDefinition };
 
+/** Strip Mongo ObjectIds / non-plain values before crossing the RSC boundary */
+function serializeWebhook(doc: Record<string, unknown>): WebhookDefinition {
+  const id = doc._id;
+  return {
+    _id: id != null ? String(id) : undefined,
+    userId: String(doc.userId ?? ""),
+    name: String(doc.name ?? ""),
+    slug: String(doc.slug ?? ""),
+    method: String(doc.method ?? "POST"),
+    status: Number(doc.status) || 200,
+    contentType: String(doc.contentType ?? "application/json"),
+    body: String(doc.body ?? ""),
+    notifyEmail: doc.notifyEmail != null ? String(doc.notifyEmail) : undefined,
+    forwardUrl: doc.forwardUrl != null ? String(doc.forwardUrl) : undefined,
+    retryCount: doc.retryCount != null ? Number(doc.retryCount) : undefined,
+    transformScript:
+      doc.transformScript != null ? String(doc.transformScript) : undefined,
+    cronSchedule: doc.cronSchedule != null ? String(doc.cronSchedule) : undefined,
+    delayMs: doc.delayMs != null ? Number(doc.delayMs) : undefined,
+    createdAt: String(doc.createdAt ?? ""),
+  };
+}
+
 /**
  * Gets the current user's subscription tier and usage statistics
  */
@@ -106,7 +132,7 @@ export async function createWebhook(prevState: any, formData: FormData): Promise
     const method = (formData.get("method") as string) || "POST";
     const statusStr = (formData.get("status") as string) || "200";
     const contentType = (formData.get("contentType") as string) || "application/json";
-    const body = (formData.get("body") as string) || "{\"status\": \"success\"}";
+    const body = (formData.get("body") as string) || "{\"ok\": true}";
     const notifyEmail = (formData.get("notifyEmail") as string) || "";
     const forwardUrl = (formData.get("forwardUrl") as string) || "";
     const retryCountStr = (formData.get("retryCount") as string) || "3";
@@ -117,7 +143,7 @@ export async function createWebhook(prevState: any, formData: FormData): Promise
     const status = Number.parseInt(statusStr, 10) || 200;
     const retryCount = Number.parseInt(retryCountStr, 10) || 3;
     const delayMs = Number.parseInt(delayMsStr, 10) || 0;
-    const isPremium = has({ plan: "premium" }) || has({ feature: "email_alerts" });
+    const entitlements = getEntitlements(has);
 
     const db = await getDb();
 
@@ -173,7 +199,16 @@ export async function createWebhook(prevState: any, formData: FormData): Promise
     };
 
     try {
-      await db.collection("webhooks").insertOne(newWebhook);
+      const insertResult = await db.collection("webhooks").insertOne(newWebhook);
+      revalidatePath("/");
+      // insertOne mutates the doc with an ObjectId _id — serialize before
+      // returning to Client Components / useActionState
+      return {
+        data: serializeWebhook({
+          ...newWebhook,
+          _id: insertResult.insertedId,
+        }),
+      };
     } catch (insertErr: unknown) {
       // Unique index race
       if (
@@ -186,9 +221,6 @@ export async function createWebhook(prevState: any, formData: FormData): Promise
       }
       throw insertErr;
     }
-
-    revalidatePath("/");
-    return { data: newWebhook as WebhookDefinition };
   } catch (e: unknown) {
     console.error("Error creating webhook configuration", e);
     return { error: e instanceof Error ? e.message : "An unexpected error occurred." };
@@ -210,18 +242,7 @@ export async function getWebhooks(): Promise<WebhookDefinition[]> {
       .sort({ createdAt: -1 })
       .toArray();
 
-    return docs.map((doc) => ({
-      _id: doc._id.toString(),
-      userId: doc.userId,
-      name: doc.name,
-      slug: doc.slug,
-      method: doc.method,
-      status: doc.status,
-      contentType: doc.contentType,
-      body: doc.body,
-      notifyEmail: doc.notifyEmail,
-      createdAt: doc.createdAt,
-    })) as WebhookDefinition[];
+    return docs.map((doc) => serializeWebhook(doc as Record<string, unknown>));
   } catch (e) {
     console.error("Error fetching webhooks from MongoDB", e);
     return [];
@@ -477,8 +498,7 @@ export async function forwardWebhookRequest(
 
   // Update DB
   try {
-    const client = await clientPromise;
-    const db = client.db("dynamic-webhook-app");
+    const db = await getDb();
     const deliveryStatus = success ? "SUCCESS" : "DLQ";
 
     await db.collection("logs").updateOne(
@@ -508,8 +528,7 @@ export async function getDLQLogs(): Promise<WebhookRequestLog[]> {
     const { userId } = await auth();
     if (!userId) return [];
 
-    const client = await clientPromise;
-    const db = client.db("dynamic-webhook-app");
+    const db = await getDb();
 
     // Get user's webhooks slugs
     const userWebhooks = await db.collection("webhooks").find({ userId }).toArray();
@@ -554,8 +573,7 @@ export async function redriveDLQPayload(logId: string) {
     const { userId } = await auth();
     if (!userId) return { error: "Unauthorized. Please sign in." };
 
-    const client = await clientPromise;
-    const db = client.db("dynamic-webhook-app");
+    const db = await getDb();
 
     // Fetch the log
     const log = await db.collection("logs").findOne({ _id: new ObjectId(logId) });
@@ -609,8 +627,7 @@ export async function deleteWebhooksBatch(slugs: string[]) {
       return { error: "Unauthorized. Please sign in." };
     }
 
-    const client = await clientPromise;
-    const db = client.db("dynamic-webhook-app");
+    const db = await getDb();
 
     // Check ownership for all requested slugs
     const userWebhooks = await db
@@ -643,8 +660,7 @@ export async function exportWebhooksBatch(slugs: string[]): Promise<WebhookDefin
     const { userId } = await auth();
     if (!userId) return [];
 
-    const client = await clientPromise;
-    const db = client.db("dynamic-webhook-app");
+    const db = await getDb();
 
     // Fetch and verify ownership
     const docs = await db
@@ -652,23 +668,7 @@ export async function exportWebhooksBatch(slugs: string[]): Promise<WebhookDefin
       .find({ slug: { $in: slugs }, userId })
       .toArray();
 
-    return docs.map((doc) => ({
-      _id: doc._id.toString(),
-      userId: doc.userId,
-      name: doc.name,
-      slug: doc.slug,
-      method: doc.method,
-      status: doc.status,
-      contentType: doc.contentType,
-      body: doc.body,
-      notifyEmail: doc.notifyEmail,
-      forwardUrl: doc.forwardUrl,
-      retryCount: doc.retryCount,
-      transformScript: doc.transformScript,
-      cronSchedule: doc.cronSchedule,
-      delayMs: doc.delayMs,
-      createdAt: doc.createdAt,
-    })) as WebhookDefinition[];
+    return docs.map((doc) => serializeWebhook(doc as Record<string, unknown>));
   } catch (e) {
     console.error("Failed to export webhooks", e);
     return [];
@@ -685,8 +685,7 @@ export async function updateWebhooksStatusBatch(slugs: string[], status: number)
       return { error: "Unauthorized. Please sign in." };
     }
 
-    const client = await clientPromise;
-    const db = client.db("dynamic-webhook-app");
+    const db = await getDb();
 
     // Find and verify ownership
     const userWebhooks = await db
