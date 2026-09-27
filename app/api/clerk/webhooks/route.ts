@@ -25,7 +25,9 @@ export async function POST(req: NextRequest) {
       evt.type === "subscription.created" ||
       evt.type === "subscription.updated" ||
       evt.type === "subscription.active" ||
-      evt.type === "subscription.pastDue"
+      evt.type === "subscription.pastDue" ||
+      evt.type === "subscription.canceled" ||
+      evt.type === "subscription.deleted"
     ) {
       const data = evt.data as {
         id: string;
@@ -36,6 +38,7 @@ export async function POST(req: NextRequest) {
 
       const entityId = data.payer?.organization_id ?? data.payer?.user_id;
       const plan = data.items?.[0]?.plan?.slug;
+      const isCanceled = evt.type === "subscription.canceled" || evt.type === "subscription.deleted";
 
       await db.collection("subscriptions").updateOne(
         { subscriptionId: data.id },
@@ -44,7 +47,7 @@ export async function POST(req: NextRequest) {
             subscriptionId: data.id,
             entityId: entityId ?? null,
             plan: plan ?? null,
-            status: data.status ?? evt.type,
+            status: isCanceled ? "canceled" : (data.status ?? evt.type),
             eventType: evt.type,
             updatedAt: receivedAt,
           },
@@ -57,6 +60,7 @@ export async function POST(req: NextRequest) {
     if (
       evt.type === "subscriptionItem.canceled" ||
       evt.type === "subscriptionItem.ended" ||
+      evt.type === "subscriptionItem.deleted" ||
       evt.type === "subscriptionItem.pastDue" ||
       evt.type === "subscriptionItem.active"
     ) {
@@ -78,12 +82,12 @@ export async function POST(req: NextRequest) {
         createdAt: receivedAt,
       });
 
-      if (entityId && (evt.type === "subscriptionItem.canceled" || evt.type === "subscriptionItem.ended")) {
+      if (entityId && (evt.type === "subscriptionItem.canceled" || evt.type === "subscriptionItem.ended" || evt.type === "subscriptionItem.deleted")) {
         await db.collection("subscriptions").updateOne(
           { entityId, plan: data.plan?.slug },
           {
             $set: {
-              status: evt.type === "subscriptionItem.canceled" ? "canceled" : "ended",
+              status: "canceled",
               updatedAt: receivedAt,
             },
           }

@@ -31,6 +31,7 @@ export interface WebhookDefinition {
   transformScript?: string;
   cronSchedule?: string;
   delayMs?: number;
+  isLimitExceeded?: boolean;
 }
 
 export interface WebhookRequestLog {
@@ -62,6 +63,7 @@ export interface UserTierInfo {
   isPremium: boolean;
   activePlan: string;
   endpointsCount: number;
+  exceededEndpointsCount?: number;
 }
 
 export type WebhookState = { error: string } | { data: WebhookDefinition };
@@ -96,24 +98,30 @@ export async function getUserTier(): Promise<UserTierInfo> {
   try {
     const { userId, has } = await auth();
     if (!userId) {
-      return { isPremium: false, activePlan: "Guest", endpointsCount: 0 };
+      return { isPremium: false, activePlan: "Guest", endpointsCount: 0, exceededEndpointsCount: 0 };
     }
 
     const db = await getDb();
     const count = await db.collection("webhooks").countDocuments({ userId });
     const entitlements = getEntitlements(has);
+    const isPremium =
+      entitlements.isPremium ||
+      entitlements.canCreateUnlimitedEndpoints ||
+      entitlements.canUseEmailAlerts;
+
+    const exceeded = !isPremium && count > BILLING.freeEndpointLimit
+      ? count - BILLING.freeEndpointLimit
+      : 0;
 
     return {
-      isPremium:
-        entitlements.isPremium ||
-        entitlements.canCreateUnlimitedEndpoints ||
-        entitlements.canUseEmailAlerts,
+      isPremium,
       activePlan: entitlements.activePlan,
       endpointsCount: count,
+      exceededEndpointsCount: exceeded,
     };
   } catch (e) {
     console.error("Error fetching user tier info", e);
-    return { isPremium: false, activePlan: "Cloud Free", endpointsCount: 0 };
+    return { isPremium: false, activePlan: "Cloud Free", endpointsCount: 0, exceededEndpointsCount: 0 };
   }
 }
 
@@ -232,17 +240,30 @@ export async function createWebhook(prevState: any, formData: FormData): Promise
  */
 export async function getWebhooks(): Promise<WebhookDefinition[]> {
   try {
-    const { userId } = await auth();
+    const { userId, has } = await auth();
     if (!userId) return [];
 
     const db = await getDb();
+    // Sort chronological ascending so the earliest created endpoints are active within free tier
     const docs = await db
       .collection("webhooks")
       .find({ userId })
-      .sort({ createdAt: -1 })
+      .sort({ createdAt: 1 })
       .toArray();
 
-    return docs.map((doc) => serializeWebhook(doc as Record<string, unknown>));
+    const entitlements = getEntitlements(has);
+    const canUnlimited = entitlements.canCreateUnlimitedEndpoints;
+
+    const list = docs.map((doc, index) => {
+      const wh = serializeWebhook(doc as Record<string, unknown>);
+      if (!canUnlimited && index >= BILLING.freeEndpointLimit) {
+        wh.isLimitExceeded = true;
+      }
+      return wh;
+    });
+
+    // Sort newest first for UI display
+    return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   } catch (e) {
     console.error("Error fetching webhooks from MongoDB", e);
     return [];

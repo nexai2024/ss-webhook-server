@@ -25,11 +25,16 @@ const mockFind = vi.fn().mockReturnValue({
   toArray: mockToArray,
 });
 
+const mockCreateIndex = vi.fn().mockResolvedValue("index_name");
+
 const mockDb = {
   collection: vi.fn().mockReturnValue({
     find: mockFind,
     deleteMany: mockDeleteMany,
     updateMany: mockUpdateMany,
+    createIndex: mockCreateIndex,
+    countDocuments: vi.fn().mockResolvedValue(2),
+    findOne: vi.fn().mockResolvedValue(null),
   }),
 };
 
