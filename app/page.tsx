@@ -53,7 +53,8 @@ import {
   BookOpen,
   Send,
   RotateCw,
-  FileDown
+  FileDown,
+  AlertCircle
 } from "lucide-react";
 import Link from "next/link";
 
@@ -70,10 +71,16 @@ export default function Page() {
     errors: 0,
     successes: 0,
   });
-  const [tierInfo, setTierInfo] = React.useState({
+  const [tierInfo, setTierInfo] = React.useState<{
+    isPremium: boolean;
+    activePlan: string;
+    endpointsCount: number;
+    exceededEndpointsCount?: number;
+  }>({
     isPremium: false,
     activePlan: "Cloud Free",
     endpointsCount: 0,
+    exceededEndpointsCount: 0,
   });
   const [loading, setLoading] = React.useState(true);
   const [loadingLogs, setLoadingLogs] = React.useState(false);
@@ -617,6 +624,29 @@ export default function Page() {
           </div>
         </header>
 
+        {/* Cloud Free Tier Downgrade / Exceeded Endpoints Alert Banner */}
+        {!tierInfo.isPremium && (tierInfo.exceededEndpointsCount ?? 0) > 0 && (
+          <div className="bg-amber-950/40 border border-amber-800/80 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fade-in shadow-xl">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-amber-300">
+                  Cloud Free Limit Exceeded ({tierInfo.endpointsCount} / 2 endpoints)
+                </p>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  You have {tierInfo.exceededEndpointsCount} endpoint{tierInfo.exceededEndpointsCount! > 1 ? "s" : ""} paused because Cloud Free allows a maximum of 2 active endpoints. Upgrade to Cloud Premium to re-enable all endpoints.
+                </p>
+              </div>
+            </div>
+            <Link
+              href="/pricing"
+              className="px-4 py-2 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl transition-colors cursor-pointer shrink-0"
+            >
+              Upgrade to Premium
+            </Link>
+          </div>
+        )}
+
         {/* Dashboard Analytics summary counters */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-slate-900/60 border border-slate-800/80 p-5 rounded-2xl flex items-center gap-4 shadow-xl">
@@ -1073,8 +1103,14 @@ export default function Page() {
                           {isSelected && (
                             <span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse" />
                           )}
-                          {/* Health status indicator */}
-                          {renderHealthBadge(wh)}
+                          {/* Limit Exceeded / Paused badge */}
+                          {wh.isLimitExceeded ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded font-extrabold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                              PAUSED (Limit Exceeded)
+                            </span>
+                          ) : (
+                            renderHealthBadge(wh)
+                          )}
                           <span className="text-[11px] bg-slate-950 px-2 py-1 rounded text-slate-400 border border-slate-800 font-bold font-mono">
                             Returns {wh.status}
                           </span>

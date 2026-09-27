@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import WebhookTriggeredEmail from "../../../../emails/webhook-triggered";
 import { forwardWebhookRequest } from "../../../lib/actions";
+import { BILLING, isUserPremium } from "../../../lib/billing";
 import { getDb } from "../../../lib/db";
 import { assertWebhookRateLimit } from "../../../lib/rate-limit";
 import {
@@ -70,18 +71,37 @@ async function handleRequest(
   try {
     const db = await getDb();
 
-    const rate = await assertWebhookRateLimit(db, slug);
+    const webhook = await db.collection("webhooks").findOne({ slug });
+    if (!webhook) {
+      return jsonError(404, `Webhook endpoint '/api/webhooks/${slug}' not found.`);
+    }
+
+    const isPremium = await isUserPremium(db, webhook.userId);
+
+    // Enforce endpoint cap on Cloud Free tier (downgrade protection)
+    if (!isPremium) {
+      const userWebhooks = await db
+        .collection("webhooks")
+        .find({ userId: webhook.userId })
+        .sort({ createdAt: 1 })
+        .toArray();
+
+      const endpointIndex = userWebhooks.findIndex((w) => w.slug === slug);
+      if (endpointIndex >= BILLING.freeEndpointLimit) {
+        return jsonError(
+          403,
+          `Endpoint disabled. Cloud Free tier allows up to ${BILLING.freeEndpointLimit} endpoints. Upgrade to Cloud Premium to re-enable this endpoint.`
+        );
+      }
+    }
+
+    const rate = await assertWebhookRateLimit(db, slug, isPremium);
     if (!rate.allowed) {
       return jsonError(429, "Rate limit exceeded for this endpoint. Try again shortly.", {
         "Retry-After": String(rate.retryAfterSec),
         "X-RateLimit-Limit": String(rate.limit),
         "X-RateLimit-Remaining": "0",
       });
-    }
-
-    const webhook = await db.collection("webhooks").findOne({ slug });
-    if (!webhook) {
-      return jsonError(404, `Webhook endpoint '/api/webhooks/${slug}' not found.`);
     }
 
     const requestedMethod = request.method;
@@ -93,6 +113,15 @@ async function handleRequest(
         }),
         { status: 405, headers: { "Content-Type": "application/json" } }
       );
+    }
+
+    // Enforce allowed response status on Free tier
+    let responseStatus = Number(webhook.status) || 200;
+    if (!isPremium) {
+      const freeStatuses: readonly number[] = BILLING.freeAllowedStatuses;
+      if (!freeStatuses.includes(responseStatus)) {
+        responseStatus = 200;
+      }
     }
 
     // --- FEATURE 50: IDEMPOTENCY-KEY CHECK ---
@@ -115,18 +144,18 @@ async function handleRequest(
           body,
           clientIp,
           timestamp,
-          status: existingLog.responseStatus || webhook.status,
+          status: existingLog.responseStatus || responseStatus,
           isDuplicate: true,
           idempotencyKeyUsed: idempotencyKey,
           deliveryStatus: "NONE",
-          responseStatus: existingLog.responseStatus || webhook.status,
+          responseStatus: existingLog.responseStatus || responseStatus,
           responseBody: existingLog.responseBody || webhook.body,
           responseContentType: existingLog.responseContentType || webhook.contentType,
         });
 
         // Return the cached response
         return new NextResponse(existingLog.responseBody ?? webhook.body, {
-          status: existingLog.responseStatus ?? webhook.status,
+          status: existingLog.responseStatus ?? responseStatus,
           headers: {
             "Content-Type": existingLog.responseContentType ?? webhook.contentType,
             "X-Cache-Lookup": "HIT - Idempotency Duplicate",
@@ -181,7 +210,7 @@ async function handleRequest(
     let emailNotified = false;
     let emailError: string | undefined;
 
-    if (webhook.notifyEmail) {
+    if (webhook.notifyEmail && isPremium) {
       try {
         if (!isResendConfigured()) {
           if (process.env.NODE_ENV === "production") {
@@ -246,13 +275,13 @@ async function handleRequest(
       clientIp,
       timestamp,
       createdAt: new Date(),
-      status: webhook.status,
+      status: responseStatus,
       emailNotified,
       emailError,
       idempotencyKeyUsed: idempotencyKey || undefined,
       transformedBody: transformedBody !== body ? transformedBody : undefined,
       delayAppliedMs: delayMs || undefined,
-      responseStatus: webhook.status,
+      responseStatus: responseStatus,
       responseBody: webhook.body,
       responseContentType: webhook.contentType,
       deliveryStatus: webhook.forwardUrl ? "PENDING" : "NONE",
@@ -278,7 +307,7 @@ async function handleRequest(
 
     // Return the response configured by the developer
     return new NextResponse(webhook.body, {
-      status: webhook.status,
+      status: responseStatus,
       headers: {
         "Content-Type": webhook.contentType,
         "Access-Control-Allow-Origin": "*",
