@@ -3,12 +3,15 @@ import { Resend } from "resend";
 import WebhookTriggeredEmail from "../../../../emails/webhook-triggered";
 import { forwardWebhookRequest } from "../../../lib/actions";
 import { BILLING, isUserPremium } from "../../../lib/billing";
+import { executeSaaSConnectors } from "../../../lib/connectors";
 import { getDb } from "../../../lib/db";
 import { assertWebhookRateLimit } from "../../../lib/rate-limit";
 import {
   contentLengthTooLarge,
   getMaxBodyBytes,
+  isEndpointExpired,
   redactHeaders,
+  validateBasicAuth,
 } from "../../../lib/security";
 import {
   evaluateFilterRules,
@@ -102,6 +105,56 @@ async function handleRequest(
           `Endpoint disabled. Cloud Free tier allows up to ${BILLING.freeEndpointLimit} endpoints. Upgrade to Cloud Premium to re-enable this endpoint.`
         );
       }
+    }
+
+    // --- NICE-TO-HAVE FEATURE 4: HTTP BASIC AUTH / PASSWORD PROTECTION ---
+    if (webhook.basicAuthUsername || webhook.basicAuthPassword) {
+      const authHeader = request.headers.get("authorization");
+      const authResult = validateBasicAuth(
+        authHeader,
+        webhook.basicAuthUsername,
+        webhook.basicAuthPassword
+      );
+
+      if (!authResult.valid) {
+        await db.collection("logs").insertOne({
+          webhookSlug: slug,
+          method: request.method,
+          headers,
+          query,
+          body,
+          clientIp,
+          timestamp,
+          status: 401,
+          authError: authResult.reason,
+          deliveryStatus: "NONE",
+        });
+
+        return jsonError(401, `HTTP Basic Auth Failed: ${authResult.reason}`, {
+          "WWW-Authenticate": 'Basic realm="Webhook Protected"',
+        });
+      }
+    }
+
+    // --- NICE-TO-HAVE FEATURE 3: ENDPOINT TTL / EXPIRED / MAX REQUESTS POLICY ---
+    const totalRequestsCount = await db.collection("logs").countDocuments({ webhookSlug: slug });
+    const ttlCheck = isEndpointExpired(webhook.expiresAt, webhook.maxRequests, totalRequestsCount);
+    if (ttlCheck.expired) {
+      await db.collection("logs").insertOne({
+        webhookSlug: slug,
+        method: request.method,
+        headers,
+        query,
+        body,
+        clientIp,
+        timestamp,
+        status: 410,
+        ttlExpired: true,
+        ttlReason: ttlCheck.reason,
+        deliveryStatus: "NONE",
+      });
+
+      return jsonError(410, `Endpoint Expired / Quota Exceeded: ${ttlCheck.reason}`);
     }
 
     const rate = await assertWebhookRateLimit(db, slug, isPremium);
@@ -210,7 +263,6 @@ async function handleRequest(
     // --- FEATURE 50: IDEMPOTENCY-KEY CHECK ---
     const idempotencyKey = headers["idempotency-key"] || headers["x-idempotency-key"];
     if (idempotencyKey) {
-      // Find if we have already successfully processed this request
       const existingLog = await db.collection("logs").findOne({
         webhookSlug: slug,
         idempotencyKeyUsed: idempotencyKey,
@@ -218,7 +270,6 @@ async function handleRequest(
       });
 
       if (existingLog) {
-        // Log this duplicate request attempt
         await db.collection("logs").insertOne({
           webhookSlug: slug,
           method: requestedMethod,
@@ -236,7 +287,6 @@ async function handleRequest(
           responseContentType: existingLog.responseContentType || webhook.contentType,
         });
 
-        // Return the cached response
         return new NextResponse(existingLog.responseBody ?? webhook.body, {
           status: existingLog.responseStatus ?? responseStatus,
           headers: {
@@ -266,7 +316,6 @@ async function handleRequest(
           // Keep as string if not parseable JSON
         }
 
-        // Wrap custom JS function in a secure shadowed environment to prevent RCE / sandbox escapes
         const blockedGlobals = [
           "global", "process", "require", "module", "exports",
           "fetch", "eval", "Function", "globalThis", "setTimeout",
@@ -288,6 +337,18 @@ async function handleRequest(
         transformError = err.message || "Script execution failed";
         console.error("Transformation Error:", transformError);
       }
+    }
+
+    // --- NICE-TO-HAVE FEATURE 2: 3RD-PARTY SAAS CONNECTORS EXECUTION ---
+    let connectorResults = undefined;
+    if (Array.isArray(webhook.saasConnectors) && webhook.saasConnectors.length > 0) {
+      connectorResults = await executeSaaSConnectors(webhook.saasConnectors, {
+        body: transformedBody,
+        headers,
+        query,
+        timestamp,
+        slug,
+      });
     }
 
     let emailNotified = false;
@@ -387,6 +448,7 @@ async function handleRequest(
       discordNotified: discordNotified || undefined,
       pagerDutyNotified: pagerDutyNotified || undefined,
       hmacVerified: webhook.hmacSecret ? true : undefined,
+      connectorResults,
       deliveryStatus: (webhook.forwardUrls?.length || webhook.forwardUrl) ? "PENDING" : "NONE",
     });
 
@@ -405,14 +467,22 @@ async function handleRequest(
       transformedBody,
     });
 
-    // --- MUST-HAVE FEATURE 5: MULTI-DESTINATION FAN-OUT PROXYING & RETRIES ---
+    // --- MUST-HAVE FEATURE 5 & NICE-TO-HAVE FEATURE 5: MULTI-DESTINATION FAN-OUT PROXYING & ASYMMETRIC SIGNING ---
     const targets: string[] = Array.isArray(webhook.forwardUrls) && webhook.forwardUrls.length > 0
       ? webhook.forwardUrls
       : webhook.forwardUrl ? [webhook.forwardUrl] : [];
 
     if (targets.length > 0) {
       const maxRetries = webhook.retryCount !== undefined ? Number(webhook.retryCount) : 3;
-      // Trigger background forwarding for all fan-out targets
+
+      const asymmetricConfig = webhook.asymmetricSigningEnabled && webhook.privateKey
+        ? {
+            privateKey: webhook.privateKey,
+            keyType: (webhook.asymmetricKeyType || "ed25519") as "ed25519" | "rsa",
+            publicKey: webhook.publicKey || ""
+          }
+        : undefined;
+
       for (const targetUrl of targets) {
         forwardWebhookRequest(
           logId,
@@ -420,14 +490,14 @@ async function handleRequest(
           requestedMethod,
           headers,
           transformedBody,
-          maxRetries
+          maxRetries,
+          asymmetricConfig
         ).catch((err) => {
           console.error(`Background proxy forwarding error to ${targetUrl}:`, err);
         });
       }
     }
 
-    // Return the response configured by the developer
     return new NextResponse(webhook.body, {
       status: responseStatus,
       headers: {
