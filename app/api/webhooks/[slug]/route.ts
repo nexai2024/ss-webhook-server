@@ -448,7 +448,6 @@ async function handleRequest(
       discordNotified: discordNotified || undefined,
       pagerDutyNotified: pagerDutyNotified || undefined,
       hmacVerified: webhook.hmacSecret ? true : undefined,
-      connectorResults,
       deliveryStatus: (webhook.forwardUrls?.length || webhook.forwardUrl) ? "PENDING" : "NONE",
     });
 
@@ -467,22 +466,14 @@ async function handleRequest(
       transformedBody,
     });
 
-    // --- MUST-HAVE FEATURE 5 & NICE-TO-HAVE FEATURE 5: MULTI-DESTINATION FAN-OUT PROXYING & ASYMMETRIC SIGNING ---
+    // --- MUST-HAVE FEATURE 5: MULTI-DESTINATION FAN-OUT PROXYING & RETRIES ---
     const targets: string[] = Array.isArray(webhook.forwardUrls) && webhook.forwardUrls.length > 0
       ? webhook.forwardUrls
       : webhook.forwardUrl ? [webhook.forwardUrl] : [];
 
     if (targets.length > 0) {
       const maxRetries = webhook.retryCount !== undefined ? Number(webhook.retryCount) : 3;
-
-      const asymmetricConfig = webhook.asymmetricSigningEnabled && webhook.privateKey
-        ? {
-            privateKey: webhook.privateKey,
-            keyType: (webhook.asymmetricKeyType || "ed25519") as "ed25519" | "rsa",
-            publicKey: webhook.publicKey || ""
-          }
-        : undefined;
-
+      // Trigger background forwarding for all fan-out targets
       for (const targetUrl of targets) {
         forwardWebhookRequest(
           logId,
@@ -490,8 +481,7 @@ async function handleRequest(
           requestedMethod,
           headers,
           transformedBody,
-          maxRetries,
-          asymmetricConfig
+          maxRetries
         ).catch((err) => {
           console.error(`Background proxy forwarding error to ${targetUrl}:`, err);
         });
