@@ -10,6 +10,15 @@ import {
   getMaxBodyBytes,
   redactHeaders,
 } from "../../../lib/security";
+import {
+  evaluateFilterRules,
+  sendDiscordAlert,
+  sendPagerDutyAlert,
+  sendSlackAlert,
+  validateJsonSchema,
+  verifyHmacSignature,
+} from "../../../lib/verification";
+import { broadcastWebhookEvent } from "./stream/pubsub";
 
 const MOCK_RESEND_KEY = "re_mockkey_12345678";
 
@@ -124,6 +133,80 @@ async function handleRequest(
       }
     }
 
+    // --- MUST-HAVE FEATURE 1: HMAC SIGNATURE VERIFICATION ---
+    if (webhook.hmacSecret) {
+      const hmacResult = verifyHmacSignature(
+        webhook.hmacProvider || "custom",
+        webhook.hmacSecret,
+        body,
+        headers
+      );
+
+      if (!hmacResult.valid) {
+        await db.collection("logs").insertOne({
+          webhookSlug: slug,
+          method: requestedMethod,
+          headers,
+          query,
+          body,
+          clientIp,
+          timestamp,
+          status: 401,
+          hmacVerified: false,
+          hmacError: hmacResult.error,
+          deliveryStatus: "NONE",
+        });
+
+        return jsonError(401, `HMAC Verification Failed: ${hmacResult.error}`);
+      }
+    }
+
+    // --- MUST-HAVE FEATURE 2: JSON SCHEMA VALIDATION ---
+    if (webhook.jsonSchema) {
+      const schemaResult = validateJsonSchema(webhook.jsonSchema, body);
+      if (!schemaResult.valid) {
+        await db.collection("logs").insertOne({
+          webhookSlug: slug,
+          method: requestedMethod,
+          headers,
+          query,
+          body,
+          clientIp,
+          timestamp,
+          status: 422,
+          schemaError: schemaResult.error,
+          deliveryStatus: "NONE",
+        });
+
+        return jsonError(422, `JSON Schema Validation Failed: ${schemaResult.error}`);
+      }
+    }
+
+    // --- MUST-HAVE FEATURE 3: CONDITIONAL PAYLOAD FILTERING ---
+    if (webhook.filterRules) {
+      const filterResult = evaluateFilterRules(webhook.filterRules, body);
+      if (!filterResult.matches) {
+        await db.collection("logs").insertOne({
+          webhookSlug: slug,
+          method: requestedMethod,
+          headers,
+          query,
+          body,
+          clientIp,
+          timestamp,
+          status: 200,
+          isFiltered: true,
+          filterReason: filterResult.reason,
+          deliveryStatus: "NONE",
+        });
+
+        return new NextResponse(
+          JSON.stringify({ status: "filtered", reason: filterResult.reason }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // --- FEATURE 50: IDEMPOTENCY-KEY CHECK ---
     const idempotencyKey = headers["idempotency-key"] || headers["x-idempotency-key"];
     if (idempotencyKey) {
@@ -209,6 +292,22 @@ async function handleRequest(
 
     let emailNotified = false;
     let emailError: string | undefined;
+    let slackNotified = false;
+    let discordNotified = false;
+    let pagerDutyNotified = false;
+
+    // --- MUST-HAVE FEATURE 4: SLACK, DISCORD, PAGERDUTY ALERTS ---
+    const alertMessage = `Endpoint Builders Alert: Webhook '${webhook.name}' (/api/webhooks/${slug}) received ${requestedMethod} from ${clientIp} at ${timestamp}`;
+
+    if (webhook.notifySlackUrl) {
+      slackNotified = await sendSlackAlert(webhook.notifySlackUrl, alertMessage);
+    }
+    if (webhook.notifyDiscordUrl) {
+      discordNotified = await sendDiscordAlert(webhook.notifyDiscordUrl, alertMessage);
+    }
+    if (webhook.notifyPagerDutyKey) {
+      pagerDutyNotified = await sendPagerDutyAlert(webhook.notifyPagerDutyKey, alertMessage);
+    }
 
     if (webhook.notifyEmail && isPremium) {
       try {
@@ -284,25 +383,48 @@ async function handleRequest(
       responseStatus: responseStatus,
       responseBody: webhook.body,
       responseContentType: webhook.contentType,
-      deliveryStatus: webhook.forwardUrl ? "PENDING" : "NONE",
+      slackNotified: slackNotified || undefined,
+      discordNotified: discordNotified || undefined,
+      pagerDutyNotified: pagerDutyNotified || undefined,
+      hmacVerified: webhook.hmacSecret ? true : undefined,
+      deliveryStatus: (webhook.forwardUrls?.length || webhook.forwardUrl) ? "PENDING" : "NONE",
     });
 
     const logId = logResult.insertedId.toString();
 
-    // --- FEATURE 48, 49, 51: WEBHOOK FORWARDING / PROXYING & RETRIES ---
-    if (webhook.forwardUrl) {
+    // Broadcast event to connected SSE subscribers (Real-time live streaming)
+    broadcastWebhookEvent(slug, {
+      _id: logId,
+      webhookSlug: slug,
+      method: requestedMethod,
+      headers,
+      query,
+      body,
+      clientIp,
+      timestamp,
+      transformedBody,
+    });
+
+    // --- MUST-HAVE FEATURE 5: MULTI-DESTINATION FAN-OUT PROXYING & RETRIES ---
+    const targets: string[] = Array.isArray(webhook.forwardUrls) && webhook.forwardUrls.length > 0
+      ? webhook.forwardUrls
+      : webhook.forwardUrl ? [webhook.forwardUrl] : [];
+
+    if (targets.length > 0) {
       const maxRetries = webhook.retryCount !== undefined ? Number(webhook.retryCount) : 3;
-      // Trigger background forwarding (completely non-blocking)
-      forwardWebhookRequest(
-        logId,
-        webhook.forwardUrl,
-        requestedMethod,
-        headers,
-        transformedBody,
-        maxRetries
-      ).catch((err) => {
-        console.error("Background proxy forwarding error:", err);
-      });
+      // Trigger background forwarding for all fan-out targets
+      for (const targetUrl of targets) {
+        forwardWebhookRequest(
+          logId,
+          targetUrl,
+          requestedMethod,
+          headers,
+          transformedBody,
+          maxRetries
+        ).catch((err) => {
+          console.error(`Background proxy forwarding error to ${targetUrl}:`, err);
+        });
+      }
     }
 
     // Return the response configured by the developer

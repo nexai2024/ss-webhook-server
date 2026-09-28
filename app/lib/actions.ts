@@ -25,12 +25,20 @@ export interface WebhookDefinition {
   contentType: string;
   body: string;
   notifyEmail?: string;
+  notifySlackUrl?: string;
+  notifyDiscordUrl?: string;
+  notifyPagerDutyKey?: string;
   createdAt: string;
   forwardUrl?: string;
+  forwardUrls?: string[];
   retryCount?: number;
   transformScript?: string;
   cronSchedule?: string;
   delayMs?: number;
+  hmacSecret?: string;
+  hmacProvider?: string;
+  jsonSchema?: string;
+  filterRules?: string;
   isLimitExceeded?: boolean;
 }
 
@@ -45,6 +53,9 @@ export interface WebhookRequestLog {
   timestamp: string;
   emailNotified?: boolean;
   emailError?: string;
+  slackNotified?: boolean;
+  discordNotified?: boolean;
+  pagerDutyNotified?: boolean;
   forwardedUrl?: string;
   forwardStatus?: number;
   forwardResponse?: string;
@@ -57,6 +68,11 @@ export interface WebhookRequestLog {
   responseStatus?: number;
   responseBody?: string;
   responseContentType?: string;
+  hmacVerified?: boolean;
+  hmacError?: string;
+  schemaError?: string;
+  isFiltered?: boolean;
+  filterReason?: string;
 }
 
 export interface UserTierInfo {
@@ -81,12 +97,20 @@ function serializeWebhook(doc: Record<string, unknown>): WebhookDefinition {
     contentType: String(doc.contentType ?? "application/json"),
     body: String(doc.body ?? ""),
     notifyEmail: doc.notifyEmail != null ? String(doc.notifyEmail) : undefined,
+    notifySlackUrl: doc.notifySlackUrl != null ? String(doc.notifySlackUrl) : undefined,
+    notifyDiscordUrl: doc.notifyDiscordUrl != null ? String(doc.notifyDiscordUrl) : undefined,
+    notifyPagerDutyKey: doc.notifyPagerDutyKey != null ? String(doc.notifyPagerDutyKey) : undefined,
     forwardUrl: doc.forwardUrl != null ? String(doc.forwardUrl) : undefined,
+    forwardUrls: Array.isArray(doc.forwardUrls) ? doc.forwardUrls.map(String) : undefined,
     retryCount: doc.retryCount != null ? Number(doc.retryCount) : undefined,
     transformScript:
       doc.transformScript != null ? String(doc.transformScript) : undefined,
     cronSchedule: doc.cronSchedule != null ? String(doc.cronSchedule) : undefined,
     delayMs: doc.delayMs != null ? Number(doc.delayMs) : undefined,
+    hmacSecret: doc.hmacSecret != null ? String(doc.hmacSecret) : undefined,
+    hmacProvider: doc.hmacProvider != null ? String(doc.hmacProvider) : undefined,
+    jsonSchema: doc.jsonSchema != null ? String(doc.jsonSchema) : undefined,
+    filterRules: doc.filterRules != null ? String(doc.filterRules) : undefined,
     createdAt: String(doc.createdAt ?? ""),
   };
 }
@@ -142,11 +166,27 @@ export async function createWebhook(prevState: any, formData: FormData): Promise
     const contentType = (formData.get("contentType") as string) || "application/json";
     const body = (formData.get("body") as string) || "{\"ok\": true}";
     const notifyEmail = (formData.get("notifyEmail") as string) || "";
+    const notifySlackUrl = (formData.get("notifySlackUrl") as string) || "";
+    const notifyDiscordUrl = (formData.get("notifyDiscordUrl") as string) || "";
+    const notifyPagerDutyKey = (formData.get("notifyPagerDutyKey") as string) || "";
     const forwardUrl = (formData.get("forwardUrl") as string) || "";
+    const forwardUrlsStr = (formData.get("forwardUrls") as string) || "";
     const retryCountStr = (formData.get("retryCount") as string) || "3";
     const transformScript = (formData.get("transformScript") as string) || "";
     const cronSchedule = (formData.get("cronSchedule") as string) || "";
     const delayMsStr = (formData.get("delayMs") as string) || "0";
+    const hmacSecret = (formData.get("hmacSecret") as string) || "";
+    const hmacProvider = (formData.get("hmacProvider") as string) || "custom";
+    const jsonSchema = (formData.get("jsonSchema") as string) || "";
+    const filterRules = (formData.get("filterRules") as string) || "";
+
+    const parsedForwardUrls = forwardUrlsStr
+      .split("\n")
+      .map((u) => u.trim())
+      .filter((u) => u.length > 0);
+    if (forwardUrl.trim() && !parsedForwardUrls.includes(forwardUrl.trim())) {
+      parsedForwardUrls.unshift(forwardUrl.trim());
+    }
 
     const status = Number.parseInt(statusStr, 10) || 200;
     const retryCount = Number.parseInt(retryCountStr, 10) || 3;
@@ -198,11 +238,19 @@ export async function createWebhook(prevState: any, formData: FormData): Promise
       contentType,
       body,
       notifyEmail: notifyEmail.trim() || undefined,
+      notifySlackUrl: notifySlackUrl.trim() || undefined,
+      notifyDiscordUrl: notifyDiscordUrl.trim() || undefined,
+      notifyPagerDutyKey: notifyPagerDutyKey.trim() || undefined,
       forwardUrl: forwardUrl.trim() || undefined,
-      retryCount: forwardUrl.trim() ? retryCount : undefined,
+      forwardUrls: parsedForwardUrls.length > 0 ? parsedForwardUrls : undefined,
+      retryCount: (forwardUrl.trim() || parsedForwardUrls.length > 0) ? retryCount : undefined,
       transformScript: transformScript.trim() || undefined,
       cronSchedule: cronSchedule.trim() || undefined,
       delayMs: delayMs > 0 ? delayMs : undefined,
+      hmacSecret: hmacSecret.trim() || undefined,
+      hmacProvider: hmacSecret.trim() ? hmacProvider : undefined,
+      jsonSchema: jsonSchema.trim() || undefined,
+      filterRules: filterRules.trim() || undefined,
       createdAt: new Date().toISOString(),
     };
 

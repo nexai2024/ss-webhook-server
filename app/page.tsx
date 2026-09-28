@@ -202,6 +202,31 @@ export default function Page() {
     }
   }, [selectedSlug, fetchLogs, isSignedIn]);
 
+  // Real-time SSE live request log streaming
+  React.useEffect(() => {
+    if (!selectedSlug || !isSignedIn) return;
+
+    const streamUrl = `/api/webhooks/${selectedSlug}/stream`;
+    const es = new EventSource(streamUrl);
+
+    es.onmessage = (e) => {
+      try {
+        const event = JSON.parse(e.data);
+        if (event.type === "webhook_event" && event.payload) {
+          toast.info(`⚡ Real-time webhook captured for /api/webhooks/${selectedSlug}!`);
+          setLogs((prev) => [event.payload, ...prev]);
+          getDashboardAnalytics().then((stats) => setAnalytics(stats));
+        }
+      } catch {
+        // Ignore parse error
+      }
+    };
+
+    return () => {
+      es.close();
+    };
+  }, [selectedSlug, isSignedIn]);
+
   // Listen to creation action updates
   React.useEffect(() => {
     if (!state) return;
@@ -839,17 +864,79 @@ export default function Page() {
 
                 {showAdvanced && (
                   <div className="p-4 border-t border-slate-800 space-y-4 bg-slate-950/40 font-sans">
-                    {/* Webhook Forwarding/Proxy Target */}
+                    {/* Multi-Destination Fan-Out Proxy Targets */}
                     <div className="space-y-1.5">
-                      <label htmlFor="forwardUrl" className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider">
-                        Forward / Proxy target URL
+                      <label htmlFor="forwardUrls" className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                        Fan-Out Forwarding Target URLs (One per line)
+                      </label>
+                      <textarea
+                        id="forwardUrls"
+                        name="forwardUrls"
+                        rows={3}
+                        placeholder={`https://api.primary.com/webhooks\nhttps://api.secondary.com/webhooks`}
+                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 p-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                      />
+                    </div>
+
+                    {/* HMAC Signature Verification Settings */}
+                    <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-800 space-y-3">
+                      <span className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider block">
+                        🔒 HMAC Signature Verification
+                      </span>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label htmlFor="hmacProvider" className="block text-[10px] text-slate-400 font-bold uppercase">Provider</label>
+                          <select
+                            id="hmacProvider"
+                            name="hmacProvider"
+                            defaultValue="custom"
+                            className="w-full rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-white"
+                          >
+                            <option value="custom">Custom (X-Signature)</option>
+                            <option value="stripe">Stripe (Stripe-Signature)</option>
+                            <option value="github">GitHub (X-Hub-Signature-256)</option>
+                            <option value="shopify">Shopify (X-Shopify-Hmac-SHA256)</option>
+                            <option value="twilio">Twilio (X-Twilio-Signature)</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label htmlFor="hmacSecret" className="block text-[10px] text-slate-400 font-bold uppercase">Secret Key</label>
+                          <input
+                            id="hmacSecret"
+                            name="hmacSecret"
+                            type="password"
+                            placeholder="secret_key_example"
+                            className="w-full rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-white placeholder-slate-600"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* JSON Schema Validation */}
+                    <div className="space-y-1.5">
+                      <label htmlFor="jsonSchema" className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                        JSON Schema Structural Validation
+                      </label>
+                      <textarea
+                        id="jsonSchema"
+                        name="jsonSchema"
+                        rows={3}
+                        placeholder={`{ "required": ["event", "data"], "properties": { "event": { "type": "string" } } }`}
+                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 p-2 text-[10px] font-mono text-slate-300 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    {/* Conditional Payload Filtering Rules */}
+                    <div className="space-y-1.5">
+                      <label htmlFor="filterRules" className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                        Conditional Payload Filter Rule
                       </label>
                       <input
-                        id="forwardUrl"
-                        name="forwardUrl"
-                        type="url"
-                        placeholder="https://api.yourdomain.com/webhooks/receiver"
-                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        id="filterRules"
+                        name="filterRules"
+                        type="text"
+                        placeholder={`{ "event": "payment.succeeded" } or key=value`}
+                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
                       />
                     </div>
 
@@ -924,36 +1011,64 @@ export default function Page() {
                 )}
               </div>
 
-              {/* Alert Notification Email */}
-              <div className="space-y-1.5 bg-slate-950/40 p-3 rounded-lg border border-slate-800 relative">
-                <div className="flex items-center justify-between mb-2">
+              {/* Alert Notifications (Email, Slack, Discord, PagerDuty) */}
+              <div className="space-y-3 bg-slate-950/40 p-3.5 rounded-lg border border-slate-800 relative">
+                <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-2 text-indigo-400">
                     <Bell className="h-4 w-4" />
-                    <span className="text-xs font-bold uppercase tracking-wider">Instant Email Alerts</span>
+                    <span className="text-xs font-bold uppercase tracking-wider">Alert Notifications</span>
                   </div>
-                  {!tierInfo.isPremium && (
-                    <span className="inline-flex items-center gap-1 text-[10px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 font-bold">
-                      <Lock className="h-2.5 w-2.5" /> Premium
-                    </span>
-                  )}
                 </div>
-                <label htmlFor="notifyEmail" className="block text-[11px] text-slate-400">
-                  Receive a detailed request breakdown to your email using Resend and React Email.
-                </label>
-                <div className="relative mt-1.5">
-                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                    <Mail className="h-3.5 w-3.5 text-slate-500" />
-                  </div>
+
+                {/* Email Alert */}
+                <div className="space-y-1">
+                  <label htmlFor="notifyEmail" className="block text-[10px] text-slate-400 font-bold uppercase">Email Alert (Resend)</label>
                   <input
                     id="notifyEmail"
                     name="notifyEmail"
                     type="email"
                     disabled={!tierInfo.isPremium}
-                    placeholder={tierInfo.isPremium ? "developer@example.com" : "Upgrade to Premium to enable"}
+                    placeholder={tierInfo.isPremium ? "developer@example.com" : "Upgrade to Premium to enable email"}
                     className={clsx(
-                      "block w-full rounded-lg border border-slate-800 bg-slate-950 pl-9 pr-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none",
+                      "block w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none",
                       !tierInfo.isPremium && "opacity-50 cursor-not-allowed"
                     )}
+                  />
+                </div>
+
+                {/* Slack Alert */}
+                <div className="space-y-1">
+                  <label htmlFor="notifySlackUrl" className="block text-[10px] text-slate-400 font-bold uppercase">Slack Webhook URL</label>
+                  <input
+                    id="notifySlackUrl"
+                    name="notifySlackUrl"
+                    type="url"
+                    placeholder="https://hooks.slack.com/services/example"
+                    className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none"
+                  />
+                </div>
+
+                {/* Discord Alert */}
+                <div className="space-y-1">
+                  <label htmlFor="notifyDiscordUrl" className="block text-[10px] text-slate-400 font-bold uppercase">Discord Webhook URL</label>
+                  <input
+                    id="notifyDiscordUrl"
+                    name="notifyDiscordUrl"
+                    type="url"
+                    placeholder="https://discord.com/api/webhooks/example"
+                    className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none"
+                  />
+                </div>
+
+                {/* PagerDuty Alert */}
+                <div className="space-y-1">
+                  <label htmlFor="notifyPagerDutyKey" className="block text-[10px] text-slate-400 font-bold uppercase">PagerDuty Routing Key</label>
+                  <input
+                    id="notifyPagerDutyKey"
+                    name="notifyPagerDutyKey"
+                    type="text"
+                    placeholder="pagerduty_routing_key_example"
+                    className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none"
                   />
                 </div>
               </div>
@@ -1444,6 +1559,22 @@ export default function Page() {
                         {selectedWebhook.forwardUrl && (
                           <p>• Forward target proxy: <code className="text-indigo-400">{selectedWebhook.forwardUrl}</code></p>
                         )}
+                      </div>
+
+                      {/* Localhost CLI Tunnel instructions snippet */}
+                      <div className="bg-slate-900 p-3 rounded border border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between text-[11px] text-indigo-400 font-bold">
+                          <span>💻 Localhost Tunnel CLI Command</span>
+                          <button
+                            onClick={() => copyToClipboard(`pnpm cli --slug ${selectedWebhook.slug} --to http://localhost:3000/api/receive`)}
+                            className="text-slate-400 hover:text-white"
+                          >
+                            Copy Command
+                          </button>
+                        </div>
+                        <pre className="text-[10px] text-slate-300 bg-slate-950 p-2 rounded border border-slate-800 overflow-x-auto">
+                          pnpm cli --slug {selectedWebhook.slug} --to http://localhost:3000/api/receive
+                        </pre>
                       </div>
                     </div>
 
