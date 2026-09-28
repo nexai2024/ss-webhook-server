@@ -43,3 +43,66 @@ export function contentLengthTooLarge(contentLengthHeader: string | null, maxByt
   const length = Number.parseInt(contentLengthHeader, 10);
   return Number.isFinite(length) && length > maxBytes;
 }
+
+/**
+ * Validates HTTP Basic Auth header against configured username & password or password gate.
+ */
+export function validateBasicAuth(
+  authHeader: string | null,
+  expectedUsername?: string,
+  expectedPassword?: string
+): { valid: boolean; reason?: string } {
+  if (!expectedUsername && !expectedPassword) {
+    return { valid: true };
+  }
+
+  if (!authHeader) {
+    return { valid: false, reason: "Missing Authorization header" };
+  }
+
+  if (authHeader.startsWith("Basic ")) {
+    const credentials = Buffer.from(authHeader.substring(6), "base64").toString("utf-8");
+    const [user, pass] = credentials.split(":");
+
+    if (expectedUsername && user !== expectedUsername) {
+      return { valid: false, reason: "Invalid Basic Auth username" };
+    }
+    if (expectedPassword && pass !== expectedPassword) {
+      return { valid: false, reason: "Invalid Basic Auth password" };
+    }
+
+    return { valid: true };
+  } else if (authHeader.startsWith("Bearer ")) {
+    const token = authHeader.substring(7);
+    if (expectedPassword && token !== expectedPassword) {
+      return { valid: false, reason: "Invalid Bearer password token" };
+    }
+    return { valid: true };
+  }
+
+  return { valid: false, reason: "Unsupported Authorization header scheme" };
+}
+
+/**
+ * Checks if endpoint TTL or max requests policy has expired.
+ */
+export function isEndpointExpired(
+  expiresAt?: string,
+  maxRequests?: number,
+  currentRequestsCount?: number
+): { expired: boolean; reason?: string } {
+  if (expiresAt) {
+    const expDate = new Date(expiresAt).getTime();
+    if (!Number.isNaN(expDate) && Date.now() > expDate) {
+      return { expired: true, reason: `Endpoint expired on ${new Date(expiresAt).toUTCString()}` };
+    }
+  }
+
+  if (maxRequests !== undefined && maxRequests > 0 && currentRequestsCount !== undefined) {
+    if (currentRequestsCount >= maxRequests) {
+      return { expired: true, reason: `Endpoint request quota reached (${currentRequestsCount}/${maxRequests} requests captured)` };
+    }
+  }
+
+  return { expired: false };
+}
