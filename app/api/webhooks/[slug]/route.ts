@@ -448,7 +448,6 @@ async function handleRequest(
       discordNotified: discordNotified || undefined,
       pagerDutyNotified: pagerDutyNotified || undefined,
       hmacVerified: webhook.hmacSecret ? true : undefined,
-      connectorResults,
       deliveryStatus: (webhook.forwardUrls?.length || webhook.forwardUrl) ? "PENDING" : "NONE",
     });
 
@@ -486,8 +485,7 @@ async function handleRequest(
           requestedMethod,
           headers,
           transformedBody,
-          maxRetries,
-          asymmetricConfig
+          maxRetries
         ).catch((err) => {
           console.error(`Background proxy forwarding error to ${targetUrl}:`, err);
         });

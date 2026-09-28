@@ -964,32 +964,86 @@ export default function Page() {
                   <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
                     <ShieldCheck className="h-4 w-4" /> Asymmetric Key Signing (Ed25519/RSA)
                   </span>
-                  <input
-                    type="checkbox"
-                    checked={enableAsymmetric}
-                    onChange={(e) => setEnableAsymmetric(e.target.checked)}
-                    className="h-4 w-4 rounded bg-slate-950 border-slate-800 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                  />
-                </div>
-                {enableAsymmetric && (
-                  <div className="space-y-2 pt-1">
-                    <label className="block text-[10px] text-slate-400 uppercase font-bold">Key Algorithm Type</label>
-                    <select
-                      id="asymmetricKeyType"
-                      name="asymmetricKeyType"
-                      value={asymmetricType}
-                      onChange={(e) => setAsymmetricType(e.target.value as any)}
-                      className="w-full rounded border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
-                    >
-                      <option value="ed25519">Ed25519 (Recommended / Svix Compatible)</option>
-                      <option value="rsa">RSA-SHA256 (2048-bit)</option>
-                    </select>
-                    <p className="text-[10px] text-slate-500">
-                      Auto-generates public/private key pair. Forwarded proxy requests will carry cryptographic signatures in <code className="text-indigo-300 font-mono">X-Webhook-Signature</code> headers.
-                    </p>
-                  </div>
-                )}
-              </div>
+                  <ChevronDown className={clsx("h-4 w-4 text-slate-500 transition-transform", showAdvanced && "rotate-180")} />
+                </button>
+
+                {showAdvanced && (
+                  <div className="p-4 border-t border-slate-800 space-y-4 bg-slate-950/40 font-sans">
+                    {/* Multi-Destination Fan-Out Proxy Targets */}
+                    <div className="space-y-1.5">
+                      <label htmlFor="forwardUrls" className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                        Fan-Out Forwarding Target URLs (One per line)
+                      </label>
+                      <textarea
+                        id="forwardUrls"
+                        name="forwardUrls"
+                        rows={3}
+                        placeholder={`https://api.primary.com/webhooks\nhttps://api.secondary.com/webhooks`}
+                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 p-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                      />
+                    </div>
+
+                    {/* HMAC Signature Verification Settings */}
+                    <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-800 space-y-3">
+                      <span className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider block">
+                        🔒 HMAC Signature Verification
+                      </span>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label htmlFor="hmacProvider" className="block text-[10px] text-slate-400 font-bold uppercase">Provider</label>
+                          <select
+                            id="hmacProvider"
+                            name="hmacProvider"
+                            defaultValue="custom"
+                            className="w-full rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-white"
+                          >
+                            <option value="custom">Custom (X-Signature)</option>
+                            <option value="stripe">Stripe (Stripe-Signature)</option>
+                            <option value="github">GitHub (X-Hub-Signature-256)</option>
+                            <option value="shopify">Shopify (X-Shopify-Hmac-SHA256)</option>
+                            <option value="twilio">Twilio (X-Twilio-Signature)</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label htmlFor="hmacSecret" className="block text-[10px] text-slate-400 font-bold uppercase">Secret Key</label>
+                          <input
+                            id="hmacSecret"
+                            name="hmacSecret"
+                            type="password"
+                            placeholder="secret_key_example"
+                            className="w-full rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-white placeholder-slate-600"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* JSON Schema Validation */}
+                    <div className="space-y-1.5">
+                      <label htmlFor="jsonSchema" className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                        JSON Schema Structural Validation
+                      </label>
+                      <textarea
+                        id="jsonSchema"
+                        name="jsonSchema"
+                        rows={3}
+                        placeholder={`{ "required": ["event", "data"], "properties": { "event": { "type": "string" } } }`}
+                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 p-2 text-[10px] font-mono text-slate-300 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    {/* Conditional Payload Filtering Rules */}
+                    <div className="space-y-1.5">
+                      <label htmlFor="filterRules" className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                        Conditional Payload Filter Rule
+                      </label>
+                      <input
+                        id="filterRules"
+                        name="filterRules"
+                        type="text"
+                        placeholder={`{ "event": "payment.succeeded" } or key=value`}
+                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                      />
+                    </div>
 
               {/* FEATURE 2: 3RD-PARTY SAAS CONNECTORS */}
               <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
@@ -1046,22 +1100,65 @@ export default function Page() {
                     + Add SaaS Action Connector
                   </button>
 
-                  {saasConnectors.length > 0 && (
-                    <div className="space-y-1.5 pt-2">
-                      {saasConnectors.map((c) => (
-                        <div key={c.id} className="flex items-center justify-between bg-slate-900 px-2.5 py-1.5 rounded text-xs border border-slate-800">
-                          <span className="text-emerald-400 font-bold">{c.name}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveConnector(c.id)}
-                            className="text-rose-400 text-xs hover:underline cursor-pointer"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+              {/* Alert Notifications (Email, Slack, Discord, PagerDuty) */}
+              <div className="space-y-3 bg-slate-950/40 p-3.5 rounded-lg border border-slate-800 relative">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2 text-indigo-400">
+                    <Bell className="h-4 w-4" />
+                    <span className="text-xs font-bold uppercase tracking-wider">Alert Notifications</span>
+                  </div>
+                </div>
+
+                {/* Email Alert */}
+                <div className="space-y-1">
+                  <label htmlFor="notifyEmail" className="block text-[10px] text-slate-400 font-bold uppercase">Email Alert (Resend)</label>
+                  <input
+                    id="notifyEmail"
+                    name="notifyEmail"
+                    type="email"
+                    disabled={!tierInfo.isPremium}
+                    placeholder={tierInfo.isPremium ? "developer@example.com" : "Upgrade to Premium to enable email"}
+                    className={clsx(
+                      "block w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none",
+                      !tierInfo.isPremium && "opacity-50 cursor-not-allowed"
+                    )}
+                  />
+                </div>
+
+                {/* Slack Alert */}
+                <div className="space-y-1">
+                  <label htmlFor="notifySlackUrl" className="block text-[10px] text-slate-400 font-bold uppercase">Slack Webhook URL</label>
+                  <input
+                    id="notifySlackUrl"
+                    name="notifySlackUrl"
+                    type="url"
+                    placeholder="https://hooks.slack.com/services/example"
+                    className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none"
+                  />
+                </div>
+
+                {/* Discord Alert */}
+                <div className="space-y-1">
+                  <label htmlFor="notifyDiscordUrl" className="block text-[10px] text-slate-400 font-bold uppercase">Discord Webhook URL</label>
+                  <input
+                    id="notifyDiscordUrl"
+                    name="notifyDiscordUrl"
+                    type="url"
+                    placeholder="https://discord.com/api/webhooks/example"
+                    className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none"
+                  />
+                </div>
+
+                {/* PagerDuty Alert */}
+                <div className="space-y-1">
+                  <label htmlFor="notifyPagerDutyKey" className="block text-[10px] text-slate-400 font-bold uppercase">PagerDuty Routing Key</label>
+                  <input
+                    id="notifyPagerDutyKey"
+                    name="notifyPagerDutyKey"
+                    type="text"
+                    placeholder="pagerduty_routing_key_example"
+                    className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none"
+                  />
                 </div>
               </div>
 
