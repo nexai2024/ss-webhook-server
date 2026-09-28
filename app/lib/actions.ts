@@ -87,6 +87,12 @@ export interface WebhookRequestLog {
   schemaError?: string;
   isFiltered?: boolean;
   filterReason?: string;
+  connectorResults?: ConnectorExecutionResult[];
+  asymmetricSigned?: boolean;
+  asymmetricSignature?: string;
+  authError?: string;
+  ttlExpired?: boolean;
+  ttlReason?: string;
 }
 
 export interface UserTierInfo {
@@ -205,6 +211,13 @@ export async function createWebhook(prevState: any, formData: FormData): Promise
     const hmacProvider = (formData.get("hmacProvider") as string) || "custom";
     const jsonSchema = (formData.get("jsonSchema") as string) || "";
     const filterRules = (formData.get("filterRules") as string) || "";
+    const ttlDaysStr = (formData.get("ttlDays") as string) || "";
+    const maxRequestsStr = (formData.get("maxRequests") as string) || "";
+    const basicAuthUsername = (formData.get("basicAuthUsername") as string) || "";
+    const basicAuthPassword = (formData.get("basicAuthPassword") as string) || "";
+    const asymmetricSigningEnabled = formData.get("asymmetricSigningEnabled") === "true";
+    const asymmetricKeyType = (formData.get("asymmetricKeyType") as string) === "rsa" ? "rsa" : "ed25519";
+    const saasConnectorsJson = (formData.get("saasConnectorsJson") as string) || "";
 
     const parsedForwardUrls = forwardUrlsStr
       .split("\n")

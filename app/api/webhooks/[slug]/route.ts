@@ -473,6 +473,10 @@ async function handleRequest(
 
     if (targets.length > 0) {
       const maxRetries = webhook.retryCount !== undefined ? Number(webhook.retryCount) : 3;
+      const asymmetricConfig = webhook.asymmetricSigningEnabled && webhook.privateKey
+        ? { privateKey: webhook.privateKey, keyType: webhook.asymmetricKeyType || "ed25519", publicKey: webhook.publicKey || "" }
+        : undefined;
+
       // Trigger background forwarding for all fan-out targets
       for (const targetUrl of targets) {
         forwardWebhookRequest(
