@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@clerk/nextjs/server";
 import { ObjectId } from "mongodb";
+import { generateAsymmetricKeyPair, signAsymmetricPayload } from "./asymmetric";
 import { BILLING, getEntitlements } from "./billing";
+import type { SaaSConnectorConfig, ConnectorExecutionResult } from "./connectors";
 import { getDb } from "./db";
 import { generateEndpointSlug, normalizeSlug } from "./security";
 
@@ -40,6 +42,18 @@ export interface WebhookDefinition {
   jsonSchema?: string;
   filterRules?: string;
   isLimitExceeded?: boolean;
+
+  // New features
+  ttlDays?: number;
+  expiresAt?: string;
+  maxRequests?: number;
+  basicAuthUsername?: string;
+  basicAuthPassword?: string;
+  asymmetricSigningEnabled?: boolean;
+  asymmetricKeyType?: "ed25519" | "rsa";
+  privateKey?: string;
+  publicKey?: string;
+  saasConnectors?: SaaSConnectorConfig[];
 }
 
 export interface WebhookRequestLog {
@@ -112,6 +126,18 @@ function serializeWebhook(doc: Record<string, unknown>): WebhookDefinition {
     jsonSchema: doc.jsonSchema != null ? String(doc.jsonSchema) : undefined,
     filterRules: doc.filterRules != null ? String(doc.filterRules) : undefined,
     createdAt: String(doc.createdAt ?? ""),
+
+    // New feature fields
+    ttlDays: doc.ttlDays != null ? Number(doc.ttlDays) : undefined,
+    expiresAt: doc.expiresAt != null ? String(doc.expiresAt) : undefined,
+    maxRequests: doc.maxRequests != null ? Number(doc.maxRequests) : undefined,
+    basicAuthUsername: doc.basicAuthUsername != null ? String(doc.basicAuthUsername) : undefined,
+    basicAuthPassword: doc.basicAuthPassword != null ? String(doc.basicAuthPassword) : undefined,
+    asymmetricSigningEnabled: doc.asymmetricSigningEnabled != null ? Boolean(doc.asymmetricSigningEnabled) : undefined,
+    asymmetricKeyType: (doc.asymmetricKeyType === "rsa" ? "rsa" : "ed25519") as "ed25519" | "rsa",
+    privateKey: doc.privateKey != null ? String(doc.privateKey) : undefined,
+    publicKey: doc.publicKey != null ? String(doc.publicKey) : undefined,
+    saasConnectors: Array.isArray(doc.saasConnectors) ? (doc.saasConnectors as SaaSConnectorConfig[]) : undefined,
   };
 }
 
@@ -191,6 +217,33 @@ export async function createWebhook(prevState: any, formData: FormData): Promise
     const status = Number.parseInt(statusStr, 10) || 200;
     const retryCount = Number.parseInt(retryCountStr, 10) || 3;
     const delayMs = Number.parseInt(delayMsStr, 10) || 0;
+    const ttlDays = ttlDaysStr ? Number.parseInt(ttlDaysStr, 10) : undefined;
+    const maxRequests = maxRequestsStr ? Number.parseInt(maxRequestsStr, 10) : undefined;
+
+    let expiresAt: string | undefined = undefined;
+    if (ttlDays && ttlDays > 0) {
+      const exp = new Date();
+      exp.setDate(exp.getDate() + ttlDays);
+      expiresAt = exp.toISOString();
+    }
+
+    let parsedConnectors: SaaSConnectorConfig[] | undefined = undefined;
+    if (saasConnectorsJson.trim()) {
+      try {
+        parsedConnectors = JSON.parse(saasConnectorsJson);
+      } catch {
+        // Ignore invalid JSON
+      }
+    }
+
+    let privateKey: string | undefined = undefined;
+    let publicKey: string | undefined = undefined;
+    if (asymmetricSigningEnabled) {
+      const keys = generateAsymmetricKeyPair(asymmetricKeyType);
+      privateKey = keys.privateKey;
+      publicKey = keys.publicKey;
+    }
+
     const entitlements = getEntitlements(has);
 
     const db = await getDb();
@@ -252,13 +305,23 @@ export async function createWebhook(prevState: any, formData: FormData): Promise
       jsonSchema: jsonSchema.trim() || undefined,
       filterRules: filterRules.trim() || undefined,
       createdAt: new Date().toISOString(),
+
+      // New feature fields
+      ttlDays,
+      expiresAt,
+      maxRequests,
+      basicAuthUsername: basicAuthUsername.trim() || undefined,
+      basicAuthPassword: basicAuthPassword.trim() || undefined,
+      asymmetricSigningEnabled,
+      asymmetricKeyType: asymmetricSigningEnabled ? asymmetricKeyType : undefined,
+      privateKey,
+      publicKey,
+      saasConnectors: parsedConnectors,
     };
 
     try {
       const insertResult = await db.collection("webhooks").insertOne(newWebhook);
       revalidatePath("/");
-      // insertOne mutates the doc with an ObjectId _id — serialize before
-      // returning to Client Components / useActionState
       return {
         data: serializeWebhook({
           ...newWebhook,
@@ -266,7 +329,6 @@ export async function createWebhook(prevState: any, formData: FormData): Promise
         }),
       };
     } catch (insertErr: unknown) {
-      // Unique index race
       if (
         typeof insertErr === "object" &&
         insertErr !== null &&
@@ -292,7 +354,6 @@ export async function getWebhooks(): Promise<WebhookDefinition[]> {
     if (!userId) return [];
 
     const db = await getDb();
-    // Sort chronological ascending so the earliest created endpoints are active within free tier
     const docs = await db
       .collection("webhooks")
       .find({ userId })
@@ -310,7 +371,6 @@ export async function getWebhooks(): Promise<WebhookDefinition[]> {
       return wh;
     });
 
-    // Sort newest first for UI display
     return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   } catch (e) {
     console.error("Error fetching webhooks from MongoDB", e);
@@ -329,7 +389,6 @@ export async function getWebhookLogs(slug: string): Promise<WebhookRequestLog[]>
 
     const db = await getDb();
 
-    // Enforce ownership check before fetching logs
     const webhook = await db.collection("webhooks").findOne({ slug, userId });
     if (!webhook) return [];
 
@@ -351,6 +410,32 @@ export async function getWebhookLogs(slug: string): Promise<WebhookRequestLog[]>
       timestamp: doc.timestamp,
       emailNotified: doc.emailNotified,
       emailError: doc.emailError,
+      slackNotified: doc.slackNotified,
+      discordNotified: doc.discordNotified,
+      pagerDutyNotified: doc.pagerDutyNotified,
+      forwardedUrl: doc.forwardedUrl,
+      forwardStatus: doc.forwardStatus,
+      forwardResponse: doc.forwardResponse,
+      deliveries: doc.deliveries || [],
+      isDuplicate: doc.isDuplicate,
+      idempotencyKeyUsed: doc.idempotencyKeyUsed,
+      transformedBody: doc.transformedBody,
+      delayAppliedMs: doc.delayAppliedMs,
+      deliveryStatus: doc.deliveryStatus,
+      responseStatus: doc.responseStatus,
+      responseBody: doc.responseBody,
+      responseContentType: doc.responseContentType,
+      hmacVerified: doc.hmacVerified,
+      hmacError: doc.hmacError,
+      schemaError: doc.schemaError,
+      isFiltered: doc.isFiltered,
+      filterReason: doc.filterReason,
+      connectorResults: doc.connectorResults,
+      asymmetricSigned: doc.asymmetricSigned,
+      asymmetricSignature: doc.asymmetricSignature,
+      authError: doc.authError,
+      ttlExpired: doc.ttlExpired,
+      ttlReason: doc.ttlReason,
     })) as WebhookRequestLog[];
   } catch (e) {
     console.error("Error fetching request logs", e);
@@ -370,7 +455,6 @@ export async function deleteWebhook(slug: string) {
 
     const db = await getDb();
 
-    // Check ownership
     const webhook = await db.collection("webhooks").findOne({ slug, userId });
     if (!webhook) {
       return { error: "Webhook not found or access denied." };
@@ -400,7 +484,6 @@ export async function clearWebhookLogs(slug: string) {
 
     const db = await getDb();
 
-    // Check ownership
     const webhook = await db.collection("webhooks").findOne({ slug, userId });
     if (!webhook) {
       return { error: "Webhook not found or access denied." };
@@ -431,7 +514,6 @@ export async function getDashboardAnalytics() {
 
     const db = await getDb();
 
-    // Find all webhooks for this user
     const userWebhooks = await db.collection("webhooks").find({ userId }).toArray();
     const userSlugs = userWebhooks.map((w) => w.slug);
 
@@ -446,7 +528,6 @@ export async function getDashboardAnalytics() {
       };
     }
 
-    // Find logs for those webhooks only
     const totalLogs = await db.collection("logs").countDocuments({ webhookSlug: { $in: userSlugs } });
 
     const logs = await db.collection("logs")
@@ -484,7 +565,7 @@ export async function sleep(ms: number) {
 
 /**
  * Forwards a request to forwardUrl with exponential backoff retries.
- * Updates the log document in MongoDB.
+ * Signs request with private key if asymmetric signing is enabled.
  */
 export async function forwardWebhookRequest(
   logId: string,
@@ -492,14 +573,14 @@ export async function forwardWebhookRequest(
   method: string,
   headers: Record<string, string>,
   body: string,
-  maxRetries = 3
+  maxRetries = 3,
+  asymmetricConfig?: { privateKey: string; keyType: "ed25519" | "rsa"; publicKey: string }
 ): Promise<{ success: boolean; lastStatus?: number; lastError?: string; attempts: DeliveryAttempt[] }> {
   const attempts: DeliveryAttempt[] = [];
   let success = false;
   let lastStatus: number | undefined;
   let lastError: string | undefined;
 
-  // Filter headers
   const headersToIgnore = [
     "host",
     "connection",
@@ -519,10 +600,24 @@ export async function forwardWebhookRequest(
     }
   }
 
+  // Calculate Asymmetric Key Signature if enabled
+  let asymmetricSig: string | undefined = undefined;
+  if (asymmetricConfig?.privateKey) {
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const payloadToSign = `${timestamp}.${body}`;
+    try {
+      asymmetricSig = signAsymmetricPayload(payloadToSign, asymmetricConfig.privateKey, asymmetricConfig.keyType);
+      cleanHeaders["X-Webhook-Signature-Timestamp"] = timestamp;
+      cleanHeaders["X-Webhook-Signature-Type"] = asymmetricConfig.keyType;
+      cleanHeaders[`X-Webhook-Signature-${asymmetricConfig.keyType.toUpperCase()}`] = asymmetricSig;
+    } catch (sigErr) {
+      console.error("Failed to generate asymmetric signature", sigErr);
+    }
+  }
+
   for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
     const attemptTime = new Date().toISOString();
     try {
-      // Small delay for backoff (exponential: 100ms, 300ms, 900ms)
       if (attempt > 1) {
         const delay = 100 * Math.pow(3, attempt - 2);
         await sleep(delay);
@@ -532,7 +627,6 @@ export async function forwardWebhookRequest(
         method,
         headers: cleanHeaders,
         body: method !== "GET" && method !== "HEAD" ? body : undefined,
-        // Short timeout
         signal: AbortSignal.timeout(5000),
       });
 
@@ -565,7 +659,6 @@ export async function forwardWebhookRequest(
     }
   }
 
-  // Update DB
   try {
     const db = await getDb();
     const deliveryStatus = success ? "SUCCESS" : "DLQ";
@@ -579,6 +672,8 @@ export async function forwardWebhookRequest(
           forwardResponse: attempts[attempts.length - 1]?.error || "Success",
           deliveries: attempts,
           deliveryStatus,
+          asymmetricSigned: Boolean(asymmetricSig),
+          asymmetricSignature: asymmetricSig,
         },
       }
     );
@@ -599,7 +694,6 @@ export async function getDLQLogs(): Promise<WebhookRequestLog[]> {
 
     const db = await getDb();
 
-    // Get user's webhooks slugs
     const userWebhooks = await db.collection("webhooks").find({ userId }).toArray();
     const userSlugs = userWebhooks.map((w) => w.slug);
 
@@ -644,18 +738,15 @@ export async function redriveDLQPayload(logId: string) {
 
     const db = await getDb();
 
-    // Fetch the log
     const log = await db.collection("logs").findOne({ _id: new ObjectId(logId) });
     if (!log) return { error: "Log entry not found." };
 
-    // Verify ownership of the webhook
     const webhook = await db.collection("webhooks").findOne({ slug: log.webhookSlug, userId });
     if (!webhook) return { error: "Webhook not found or access denied." };
 
     const forwardUrl = webhook.forwardUrl;
     if (!forwardUrl) return { error: "No forward URL configured for this webhook." };
 
-    // Reset status to pending before retrying
     await db.collection("logs").updateOne(
       { _id: new ObjectId(logId) },
       { $set: { deliveryStatus: "PENDING" } }
@@ -663,14 +754,18 @@ export async function redriveDLQPayload(logId: string) {
 
     const maxRetries = webhook.retryCount !== undefined ? webhook.retryCount : 3;
 
-    // Trigger forwarding attempt
+    const asymmetricConfig = webhook.asymmetricSigningEnabled && webhook.privateKey
+      ? { privateKey: webhook.privateKey, keyType: webhook.asymmetricKeyType || "ed25519", publicKey: webhook.publicKey || "" }
+      : undefined;
+
     const result = await forwardWebhookRequest(
       logId,
       forwardUrl,
       log.method,
       log.headers,
       log.transformedBody || log.body,
-      maxRetries
+      maxRetries,
+      asymmetricConfig
     );
 
     revalidatePath("/");
@@ -698,7 +793,6 @@ export async function deleteWebhooksBatch(slugs: string[]) {
 
     const db = await getDb();
 
-    // Check ownership for all requested slugs
     const userWebhooks = await db
       .collection("webhooks")
       .find({ slug: { $in: slugs }, userId })
@@ -731,7 +825,6 @@ export async function exportWebhooksBatch(slugs: string[]): Promise<WebhookDefin
 
     const db = await getDb();
 
-    // Fetch and verify ownership
     const docs = await db
       .collection("webhooks")
       .find({ slug: { $in: slugs }, userId })
@@ -756,7 +849,6 @@ export async function updateWebhooksStatusBatch(slugs: string[], status: number)
 
     const db = await getDb();
 
-    // Find and verify ownership
     const userWebhooks = await db
       .collection("webhooks")
       .find({ slug: { $in: slugs }, userId })
@@ -776,5 +868,111 @@ export async function updateWebhooksStatusBatch(slugs: string[], status: number)
     return { data: `Updated status to ${status} for ${allowedSlugs.length} endpoints.` };
   } catch (e: any) {
     return { error: e.message || "Failed to update webhooks status." };
+  }
+}
+
+// --- WHITE-LABEL CUSTOMER PORTAL SERVER ACTIONS ---
+
+/**
+ * Public/Unauthenticated or token-based Portal endpoint fetcher
+ */
+export async function getPortalWebhookDetails(slug: string): Promise<WebhookDefinition | null> {
+  if (!slug) return null;
+  try {
+    const db = await getDb();
+    const doc = await db.collection("webhooks").findOne({ slug });
+    if (!doc) return null;
+    const serialized = serializeWebhook(doc as Record<string, unknown>);
+    // Hide sensitive credentials for white-label view
+    serialized.privateKey = undefined;
+    serialized.basicAuthPassword = serialized.basicAuthPassword ? "[PROTECTED]" : undefined;
+    return serialized;
+  } catch (e) {
+    console.error("Error fetching portal webhook details", e);
+    return null;
+  }
+}
+
+/**
+ * Fetch logs for white-label portal view
+ */
+export async function getPortalWebhookLogs(slug: string): Promise<WebhookRequestLog[]> {
+  if (!slug) return [];
+  try {
+    const db = await getDb();
+    const docs = await db
+      .collection("logs")
+      .find({ webhookSlug: slug })
+      .sort({ timestamp: -1 })
+      .limit(50)
+      .toArray();
+
+    return docs.map((doc) => ({
+      _id: doc._id.toString(),
+      webhookSlug: doc.webhookSlug,
+      method: doc.method,
+      headers: doc.headers || {},
+      query: doc.query || {},
+      body: doc.body || "",
+      clientIp: doc.clientIp || "",
+      timestamp: doc.timestamp,
+      forwardedUrl: doc.forwardedUrl,
+      forwardStatus: doc.forwardStatus,
+      forwardResponse: doc.forwardResponse,
+      deliveries: doc.deliveries || [],
+      deliveryStatus: doc.deliveryStatus,
+      connectorResults: doc.connectorResults,
+      asymmetricSigned: doc.asymmetricSigned,
+      asymmetricSignature: doc.asymmetricSignature,
+    })) as WebhookRequestLog[];
+  } catch (e) {
+    console.error("Error fetching portal logs", e);
+    return [];
+  }
+}
+
+/**
+ * Re-drive DLQ delivery from white-label portal
+ */
+export async function redrivePortalWebhookLog(slug: string, logId: string) {
+  try {
+    const db = await getDb();
+    const log = await db.collection("logs").findOne({ _id: new ObjectId(logId), webhookSlug: slug });
+    if (!log) return { error: "Log entry not found." };
+
+    const webhook = await db.collection("webhooks").findOne({ slug });
+    if (!webhook) return { error: "Webhook not found." };
+
+    const forwardUrl = webhook.forwardUrl;
+    if (!forwardUrl) return { error: "No forward URL configured for this webhook." };
+
+    await db.collection("logs").updateOne(
+      { _id: new ObjectId(logId) },
+      { $set: { deliveryStatus: "PENDING" } }
+    );
+
+    const maxRetries = webhook.retryCount !== undefined ? webhook.retryCount : 3;
+
+    const asymmetricConfig = webhook.asymmetricSigningEnabled && webhook.privateKey
+      ? { privateKey: webhook.privateKey, keyType: webhook.asymmetricKeyType || "ed25519", publicKey: webhook.publicKey || "" }
+      : undefined;
+
+    const result = await forwardWebhookRequest(
+      logId,
+      forwardUrl,
+      log.method,
+      log.headers,
+      log.transformedBody || log.body,
+      maxRetries,
+      asymmetricConfig
+    );
+
+    if (result.success) {
+      return { data: "Re-drive successful!" };
+    } else {
+      return { error: `Re-drive attempt failed: ${result.lastError}` };
+    }
+  } catch (e: any) {
+    return { error: e.message || "Re-drive failed" };
   }
 }

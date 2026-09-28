@@ -54,7 +54,12 @@ import {
   Send,
   RotateCw,
   FileDown,
-  AlertCircle
+  AlertCircle,
+  Key,
+  ShieldCheck,
+  Link as LinkIcon,
+  Layers,
+  Share2
 } from "lucide-react";
 import Link from "next/link";
 
@@ -91,8 +96,19 @@ export default function Page() {
   // Advanced settings toggle
   const [showAdvanced, setShowAdvanced] = React.useState(false);
 
+  // New Feature States
+  const [enableAsymmetric, setEnableAsymmetric] = React.useState(false);
+  const [asymmetricType, setAsymmetricType] = React.useState<"ed25519" | "rsa">("ed25519");
+
+  // SaaS connectors inputs
+  const [connectorType, setConnectorType] = React.useState<"google_sheets" | "notion" | "airtable" | "webhook">("google_sheets");
+  const [connectorTargetUrl, setConnectorTargetUrl] = React.useState("");
+  const [connectorApiKey, setConnectorApiKey] = React.useState("");
+  const [connectorDatabaseId, setConnectorDatabaseId] = React.useState("");
+  const [saasConnectors, setSaasConnectors] = React.useState<Array<{ id: string; type: any; name: string; enabled: boolean; targetUrl?: string; apiKey?: string; databaseId?: string }>>([]);
+
   // Tabs
-  const [activeTab, setActiveTab] = React.useState<"logs" | "playground" | "dlq">("logs");
+  const [activeTab, setActiveTab] = React.useState<"logs" | "playground" | "dlq" | "portal">("logs");
 
   // Multi-select webhooks
   const [selectedSlugs, setSelectedSlugs] = React.useState<string[]>([]);
@@ -115,10 +131,6 @@ export default function Page() {
     }
   }, []);
 
-  // Fetch all endpoints and summary stats.
-  // Do NOT depend on selectedSlug — that recreated this callback on every
-  // selection change, re-fetched the dashboard, and let a stale in-flight
-  // request (captured with selectedSlug === "") reset selection to the latest.
   const fetchDashboardData = React.useCallback(async () => {
     if (!isSignedIn) return;
     setLoading(true);
@@ -134,7 +146,6 @@ export default function Page() {
       setTierInfo(tier);
       setDlqLogs(dlqItems);
 
-      // Keep the current selection if it still exists; otherwise default to newest
       setSelectedSlug((current) => {
         if (current && allWebhooks.some((w) => w.slug === current)) {
           return current;
@@ -154,7 +165,6 @@ export default function Page() {
     selectedSlugRef.current = selectedSlug;
   }, [selectedSlug]);
 
-  // Load request logs for the selected webhook (ignore stale out-of-order responses)
   const fetchLogs = React.useCallback(async (slug: string) => {
     if (!slug || !isSignedIn) return;
     setLoadingLogs(true);
@@ -174,7 +184,6 @@ export default function Page() {
     }
   }, [isSignedIn]);
 
-  // Load DLQ
   const fetchDLQ = React.useCallback(async () => {
     if (!isSignedIn) return;
     setLoadingDLQ(true);
@@ -236,11 +245,45 @@ export default function Page() {
     } else if ("data" in state) {
       toast.success(`Endpoint '${state.data.name}' configured successfully!`);
       setSelectedSlug(state.data.slug);
+      setSaasConnectors([]);
       fetchDashboardData();
     }
   }, [state, fetchDashboardData]);
 
-  // Trigger simulated client-side test (Enhancement 3)
+  const handleAddConnector = () => {
+    if (connectorType === "google_sheets" || connectorType === "webhook") {
+      if (!connectorTargetUrl.trim()) {
+        toast.error("Target URL is required for Google Sheets / Webhooks");
+        return;
+      }
+    } else if (connectorType === "notion" || connectorType === "airtable") {
+      if (!connectorApiKey.trim() || !connectorDatabaseId.trim()) {
+        toast.error("API Key and Database/Table ID are required");
+        return;
+      }
+    }
+
+    const newConn = {
+      id: "conn_" + Math.random().toString(36).substr(2, 9),
+      type: connectorType,
+      name: connectorType.replace("_", " ").toUpperCase(),
+      enabled: true,
+      targetUrl: connectorTargetUrl.trim() || undefined,
+      apiKey: connectorApiKey.trim() || undefined,
+      databaseId: connectorDatabaseId.trim() || undefined,
+    };
+
+    setSaasConnectors((prev) => [...prev, newConn]);
+    setConnectorTargetUrl("");
+    setConnectorApiKey("");
+    setConnectorDatabaseId("");
+    toast.success("Added SaaS connector action!");
+  };
+
+  const handleRemoveConnector = (id: string) => {
+    setSaasConnectors((prev) => prev.filter((c) => c.id !== id));
+  };
+
   const handleTestWebhook = async () => {
     if (!selectedSlug) return;
     const webhook = webhooks.find((w) => w.slug === selectedSlug);
@@ -249,14 +292,21 @@ export default function Page() {
     const testUrl = `${origin}/api/webhooks/${selectedSlug}`;
     const testMethod = webhook.method === "ALL" ? "POST" : webhook.method;
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-Test-Sender": "Endpoint Builders Test Client"
+    };
+
+    if (webhook.basicAuthUsername && webhook.basicAuthPassword) {
+      const token = btoa(`${webhook.basicAuthUsername}:${webhook.basicAuthPassword}`);
+      headers["Authorization"] = `Basic ${token}`;
+    }
+
     toast.promise(
       (async () => {
         const response = await fetch(testUrl, {
           method: testMethod,
-          headers: {
-            "Content-Type": "application/json",
-            "X-Test-Sender": "Endpoint Builders Test Client"
-          },
+          headers,
           body: testMethod !== "GET" ? JSON.stringify({
             test: true,
             message: "Simulated trigger payload from dashboard",
@@ -265,7 +315,6 @@ export default function Page() {
         });
 
         const text = await response.text();
-        // Reload logs slightly after triggering
         setTimeout(() => {
           fetchLogs(selectedSlug);
           fetchDLQ();
@@ -316,7 +365,6 @@ export default function Page() {
     toast.success("Copied to clipboard!");
   };
 
-  // Re-drive manual replay
   const handleRedriveDLQ = async (logId: string) => {
     toast.promise(
       (async () => {
@@ -337,7 +385,6 @@ export default function Page() {
     );
   };
 
-  // Webhook Batch Operations
   const handleToggleSelectWebhook = (slug: string) => {
     setSelectedSlugs((prev) =>
       prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]
@@ -410,7 +457,6 @@ export default function Page() {
     );
   };
 
-  // Run Playground Trigger Fetch Request
   const handlePlaygroundSend = async () => {
     if (!selectedSlug) return;
     setPgLoading(true);
@@ -439,7 +485,10 @@ export default function Page() {
       return;
     }
 
-    // Build URL with query params
+    if (webhook?.basicAuthUsername && webhook?.basicAuthPassword) {
+      headersObj["Authorization"] = `Basic ${btoa(`${webhook.basicAuthUsername}:${webhook.basicAuthPassword}`)}`;
+    }
+
     const urlWithParams = new URL(testUrl);
     for (const [key, val] of Object.entries(queryObj)) {
       urlWithParams.searchParams.append(key, val);
@@ -466,7 +515,6 @@ export default function Page() {
 
       toast.success(`Playground request completed with status: ${res.status}`);
 
-      // Refresh log list and stats
       setTimeout(() => {
         fetchLogs(selectedSlug);
         fetchDLQ();
@@ -479,7 +527,6 @@ export default function Page() {
     }
   };
 
-  // Health check badge calculation helper
   const renderHealthBadge = (wh: WebhookDefinition) => {
     if (!wh.forwardUrl) {
       return (
@@ -489,7 +536,6 @@ export default function Page() {
       );
     }
 
-    // Filter logs for this webhook to calculate proxy delivery status
     const proxyLogs = logs.filter((l) => l.webhookSlug === wh.slug && l.forwardedUrl);
     if (proxyLogs.length === 0) {
       return (
@@ -523,7 +569,6 @@ export default function Page() {
 
   const selectedWebhook = webhooks.find((w) => w.slug === selectedSlug);
 
-  // Render Loader during Clerk auth verification
   if (!isLoaded) {
     return (
       <div className="bg-slate-950 min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center text-slate-100 font-sans">
@@ -533,7 +578,6 @@ export default function Page() {
     );
   }
 
-  // Render Signed Out Landing Page
   if (!isSignedIn) {
     return (
       <div className="bg-slate-950 text-slate-100 min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center py-16 px-4 sm:px-6 lg:px-8 font-sans">
@@ -551,7 +595,7 @@ export default function Page() {
           </p>
 
           <p className="text-lg text-slate-400 max-w-2xl mx-auto font-medium leading-relaxed">
-            Tired of paying for expensive enterprise infrastructure or hitting Webhook.site rate limits? Get unlimited requests, MongoDB storage, and Resend notifications on your own server for free under MIT — or scale instantly with managed hosting at endpoint.builders.
+            Tired of paying for expensive enterprise infrastructure or hitting Webhook.site rate limits? Get unlimited requests, White-Label Portals, SaaS Connectors, Basic Auth Protection, and Ed25519 Asymmetric Key Signing on your own server.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
@@ -564,55 +608,15 @@ export default function Page() {
               Compare OSS vs Managed Cloud
             </Link>
           </div>
-
-          {/* GTM / OSS vs SaaS Value Props */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-12 text-left">
-            <div className="bg-slate-900/50 border border-slate-900 p-6 rounded-2xl space-y-3 shadow-lg relative">
-              <div className="absolute top-4 right-4 text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                100% Free
-              </div>
-              <span className="p-2.5 bg-indigo-600/10 text-indigo-400 rounded-xl inline-block border border-indigo-500/10">
-                <Server className="h-5 w-5" />
-              </span>
-              <h3 className="font-bold text-white flex items-center gap-2">
-                MIT Self-Hosted
-              </h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                No rate limits, no subscription fees. Run on your own VPS or localhost and capture unlimited webhook requests. Genuine open-source developer freedom.
-              </p>
-            </div>
-
-            <div className="bg-slate-900/50 border border-slate-900 p-6 rounded-2xl space-y-3 shadow-lg">
-              <span className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl inline-block border border-emerald-500/10">
-                <Database className="h-5 w-5" />
-              </span>
-              <h3 className="font-bold text-white">MongoDB Inspector</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Tired of losing logs? Stream all webhook bodies, query parameters, client IP addresses, and HTTP headers directly to your MongoDB database for robust audits.
-              </p>
-            </div>
-
-            <div className="bg-slate-900/50 border border-slate-900 p-6 rounded-2xl space-y-3 shadow-lg">
-              <span className="p-2.5 bg-amber-500/10 text-amber-400 rounded-xl inline-block border border-amber-500/10">
-                <Mail className="h-5 w-5" />
-              </span>
-              <h3 className="font-bold text-white">Resend Email Alerts</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Set up instant email notification alerts for high-priority webhooks. Get detailed React Email breakdowns sent to your inbox when events trigger.
-              </p>
-            </div>
-          </div>
         </div>
       </div>
     );
   }
 
-  // Render Signed In Workspace Dashboard
   return (
     <div className="bg-slate-950 text-slate-100 min-h-[calc(100vh-4rem)] py-8 px-4 sm:px-6 lg:px-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-8 font-sans">
 
-        {/* Header section with User and Subscription badge */}
         <header className="flex flex-col md:flex-row md:items-center md:justify-between pb-6 border-b border-slate-900 gap-4">
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-3">
@@ -622,7 +626,6 @@ export default function Page() {
               <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-400 via-sky-400 to-emerald-400 bg-clip-text text-transparent">
                 Endpoint Builders
               </h1>
-              {/* Subscription Plan Badge */}
               <span className={clsx(
                 "text-xs px-3 py-1 rounded-full font-bold uppercase tracking-wider border",
                 tierInfo.isPremium
@@ -648,29 +651,6 @@ export default function Page() {
             </button>
           </div>
         </header>
-
-        {/* Cloud Free Tier Downgrade / Exceeded Endpoints Alert Banner */}
-        {!tierInfo.isPremium && (tierInfo.exceededEndpointsCount ?? 0) > 0 && (
-          <div className="bg-amber-950/40 border border-amber-800/80 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fade-in shadow-xl">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-bold text-amber-300">
-                  Cloud Free Limit Exceeded ({tierInfo.endpointsCount} / 2 endpoints)
-                </p>
-                <p className="text-xs text-slate-300 mt-0.5">
-                  You have {tierInfo.exceededEndpointsCount} endpoint{tierInfo.exceededEndpointsCount! > 1 ? "s" : ""} paused because Cloud Free allows a maximum of 2 active endpoints. Upgrade to Cloud Premium to re-enable all endpoints.
-                </p>
-              </div>
-            </div>
-            <Link
-              href="/pricing"
-              className="px-4 py-2 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl transition-colors cursor-pointer shrink-0"
-            >
-              Upgrade to Premium
-            </Link>
-          </div>
-        )}
 
         {/* Dashboard Analytics summary counters */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -727,11 +707,13 @@ export default function Page() {
                 <Plus className="h-5 w-5 text-indigo-400" />
                 Build Endpoint
               </h2>
-              <p className="text-xs text-slate-400 mt-1">Configure path, routing methods, mock HTTP responses, proxying, and scheduled CRON triggers.</p>
+              <p className="text-xs text-slate-400 mt-1">Configure path, routing methods, proxy targets, Basic Auth, TTL policies, SaaS connectors, and Asymmetric Signing.</p>
             </div>
 
             <form action={dispatch} className="p-6 space-y-5">
-              {/* Webhook Name */}
+              <input type="hidden" name="asymmetricSigningEnabled" value={enableAsymmetric ? "true" : "false"} />
+              <input type="hidden" name="saasConnectorsJson" value={JSON.stringify(saasConnectors)} />
+
               <div className="space-y-1.5">
                 <label htmlFor="name" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
                   Endpoint Name
@@ -746,7 +728,6 @@ export default function Page() {
                 />
               </div>
 
-              {/* Endpoint path Suffix / Slug */}
               <div className="space-y-1.5">
                 <label htmlFor="slug" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
                   URL Path Suffix (Slug)
@@ -791,11 +772,6 @@ export default function Page() {
                     <label htmlFor="status" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
                       Response Status
                     </label>
-                    {!tierInfo.isPremium && (
-                      <span className="text-[10px] text-amber-500 font-semibold flex items-center gap-1">
-                        <Lock className="h-2.5 w-2.5" /> Premium Statuses
-                      </span>
-                    )}
                   </div>
                   <select
                     id="status"
@@ -806,31 +782,13 @@ export default function Page() {
                     <option value="200">200 OK</option>
                     <option value="201">201 Created</option>
                     <option value="204">204 No Content</option>
-                    <option value="400">400 Bad Request {!tierInfo.isPremium && "🔑"}</option>
-                    <option value="401">401 Unauthorized {!tierInfo.isPremium && "🔑"}</option>
-                    <option value="403">403 Forbidden {!tierInfo.isPremium && "🔑"}</option>
-                    <option value="404">404 Not Found {!tierInfo.isPremium && "🔑"}</option>
-                    <option value="500">500 Server Error {!tierInfo.isPremium && "🔑"}</option>
+                    <option value="400">400 Bad Request</option>
+                    <option value="401">401 Unauthorized</option>
+                    <option value="403">403 Forbidden</option>
+                    <option value="404">404 Not Found</option>
+                    <option value="500">500 Server Error</option>
                   </select>
                 </div>
-              </div>
-
-              {/* Response Content Type */}
-              <div className="space-y-1.5">
-                <label htmlFor="contentType" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
-                  Response Content-Type
-                </label>
-                <select
-                  id="contentType"
-                  name="contentType"
-                  defaultValue="application/json"
-                  className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="application/json">application/json (JSON)</option>
-                  <option value="text/plain">text/plain (Plain text)</option>
-                  <option value="text/html">text/html (HTML page/payload)</option>
-                  <option value="application/xml">application/xml (XML)</option>
-                </select>
               </div>
 
               {/* Response Payload Body */}
@@ -841,7 +799,7 @@ export default function Page() {
                 <textarea
                   id="body"
                   name="body"
-                  rows={4}
+                  rows={3}
                   required
                   defaultValue='{ "ok": true }'
                   placeholder='e.g. { "ok": true }'
@@ -849,15 +807,83 @@ export default function Page() {
                 />
               </div>
 
-              {/* Collapsible Advanced Settings (Proxying, transformations, delay, cron schedule) */}
-              <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/20">
-                <button
-                  type="button"
-                  onClick={() => setShowAdvanced(!showAdvanced)}
-                  className="w-full flex items-center justify-between p-4 text-xs font-bold uppercase tracking-wider text-slate-300 hover:bg-slate-900/60 transition-colors"
-                >
-                  <span className="flex items-center gap-2">
-                    <Settings className="h-4 w-4 text-indigo-400" /> Advanced Options
+              {/* Forwarding Proxy Target URLs */}
+              <div className="space-y-1.5">
+                <label htmlFor="forwardUrls" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                  Fan-Out Forwarding Proxy Target URLs (One per line)
+                </label>
+                <textarea
+                  id="forwardUrls"
+                  name="forwardUrls"
+                  rows={2}
+                  placeholder={`https://api.primary.com/webhooks\nhttps://api.secondary.com/webhooks`}
+                  className="block w-full rounded-lg border border-slate-800 bg-slate-950 p-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                />
+              </div>
+
+              {/* FEATURE 4: BASIC AUTH / PASSWORD GATE */}
+              <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
+                <span className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Key className="h-4 w-4" /> Endpoint Basic Auth / Password Protection
+                </span>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="basicAuthUsername" className="block text-[10px] text-slate-400 uppercase font-bold">Username</label>
+                    <input
+                      id="basicAuthUsername"
+                      name="basicAuthUsername"
+                      type="text"
+                      placeholder="admin"
+                      className="w-full rounded border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-600"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="basicAuthPassword" className="block text-[10px] text-slate-400 uppercase font-bold">Password / Gate Key</label>
+                    <input
+                      id="basicAuthPassword"
+                      name="basicAuthPassword"
+                      type="password"
+                      placeholder="secret_pass"
+                      className="w-full rounded border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-600"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* FEATURE 3: TTL / AUTO-EXPIRATION POLICY */}
+              <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
+                <span className="text-xs font-bold text-sky-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Clock className="h-4 w-4" /> Endpoint Auto-Expiration / TTL Policy
+                </span>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="ttlDays" className="block text-[10px] text-slate-400 uppercase font-bold">Expire After Days</label>
+                    <input
+                      id="ttlDays"
+                      name="ttlDays"
+                      type="number"
+                      placeholder="e.g. 7"
+                      className="w-full rounded border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-600"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="maxRequests" className="block text-[10px] text-slate-400 uppercase font-bold">Max Request Quota</label>
+                    <input
+                      id="maxRequests"
+                      name="maxRequests"
+                      type="number"
+                      placeholder="e.g. 100"
+                      className="w-full rounded border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-600"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* FEATURE 5: ASYMMETRIC KEY SIGNING (ED25519 / RSA) */}
+              <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <ShieldCheck className="h-4 w-4" /> Asymmetric Key Signing (Ed25519/RSA)
                   </span>
                   <ChevronDown className={clsx("h-4 w-4 text-slate-500 transition-transform", showAdvanced && "rotate-180")} />
                 </button>
@@ -940,76 +966,60 @@ export default function Page() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      {/* Retry Count */}
-                      <div className="space-y-1.5">
-                        <label htmlFor="retryCount" className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider">
-                          Proxy Retry Count
-                        </label>
-                        <select
-                          id="retryCount"
-                          name="retryCount"
-                          defaultValue="3"
-                          className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        >
-                          <option value="0">0 retries (At-most-once)</option>
-                          <option value="1">1 retry</option>
-                          <option value="2">2 retries</option>
-                          <option value="3">3 retries (Recommended)</option>
-                          <option value="5">5 retries (Highly Guaranteed)</option>
-                        </select>
-                      </div>
+              {/* FEATURE 2: 3RD-PARTY SAAS CONNECTORS */}
+              <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
+                <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Layers className="h-4 w-4" /> 3rd-Party SaaS Connectors & No-Code Actions
+                </span>
 
-                      {/* Response Delay */}
-                      <div className="space-y-1.5">
-                        <label htmlFor="delayMs" className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider">
-                          Artificial Latency
-                        </label>
-                        <select
-                          id="delayMs"
-                          name="delayMs"
-                          defaultValue="0"
-                          className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        >
-                          <option value="0">No artificial delay (Fastest)</option>
-                          <option value="500">500 ms delay</option>
-                          <option value="1000">1.0 second delay</option>
-                          <option value="2000">2.0 seconds delay</option>
-                          <option value="5000">5.0 seconds (Test timeouts)</option>
-                        </select>
-                      </div>
-                    </div>
+                <div className="space-y-2">
+                  <select
+                    value={connectorType}
+                    onChange={(e) => setConnectorType(e.target.value as any)}
+                    className="w-full rounded border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
+                  >
+                    <option value="google_sheets">Google Sheets (App Script Webhook)</option>
+                    <option value="notion">Notion API (Database Pages)</option>
+                    <option value="airtable">Airtable API (Base Records)</option>
+                    <option value="webhook">Generic Action Webhook</option>
+                  </select>
 
-                    {/* Scheduled Trigger (Cron Schedule) */}
-                    <div className="space-y-1.5">
-                      <label htmlFor="cronSchedule" className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider">
-                        CRON Schedule (e.g. daily, hourly)
-                      </label>
+                  {(connectorType === "google_sheets" || connectorType === "webhook") && (
+                    <input
+                      type="url"
+                      placeholder="https://script.google.com/macros/s/.../exec"
+                      value={connectorTargetUrl}
+                      onChange={(e) => setConnectorTargetUrl(e.target.value)}
+                      className="w-full rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-white placeholder-slate-600"
+                    />
+                  )}
+
+                  {(connectorType === "notion" || connectorType === "airtable") && (
+                    <div className="grid grid-cols-2 gap-2">
                       <input
-                        id="cronSchedule"
-                        name="cronSchedule"
+                        type="password"
+                        placeholder="API Key / Token"
+                        value={connectorApiKey}
+                        onChange={(e) => setConnectorApiKey(e.target.value)}
+                        className="w-full rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-white placeholder-slate-600"
+                      />
+                      <input
                         type="text"
-                        placeholder="hourly, daily, or standard cron string"
-                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        placeholder={connectorType === "notion" ? "Database ID" : "appBaseId/TableName"}
+                        value={connectorDatabaseId}
+                        onChange={(e) => setConnectorDatabaseId(e.target.value)}
+                        className="w-full rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-white placeholder-slate-600"
                       />
                     </div>
+                  )}
 
-                    {/* Request payload transformations Javascript code */}
-                    <div className="space-y-1.5">
-                      <label htmlFor="transformScript" className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider">
-                        Javascript Payload Transformation
-                      </label>
-                      <textarea
-                        id="transformScript"
-                        name="transformScript"
-                        rows={5}
-                        placeholder={`// Input: "body" (object or string), "headers", "query"\n// Return transformed string or object:\n\nbody.timestamp = new Date().toISOString();\nbody.processedBy = "EndpointHub";\nreturn body;`}
-                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 p-2.5 text-[10px] font-mono text-slate-300 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
+                  <button
+                    type="button"
+                    onClick={handleAddConnector}
+                    className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    + Add SaaS Action Connector
+                  </button>
 
               {/* Alert Notifications (Email, Slack, Discord, PagerDuty) */}
               <div className="space-y-3 bg-slate-950/40 p-3.5 rounded-lg border border-slate-800 relative">
@@ -1082,7 +1092,6 @@ export default function Page() {
           {/* Webhook endpoint list and real-time logs */}
           <section className="lg:col-span-7 space-y-6">
 
-            {/* Endpoints Roster list */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl font-sans">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-2 border-b border-slate-800">
                 <h2 className="text-md font-bold text-white flex items-center gap-2">
@@ -1100,50 +1109,6 @@ export default function Page() {
                 )}
               </div>
 
-              {/* Bulk Operations Toolbar */}
-              {selectedSlugs.length > 0 && (
-                <div className="bg-indigo-950/40 border border-indigo-800/80 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3 mb-4 animate-fade-in">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-indigo-400 animate-ping" />
-                    <span className="text-xs text-indigo-300 font-bold">{selectedSlugs.length} selected</span>
-                  </div>
-                  <div className="flex items-center gap-2.5">
-                    {/* Status Changer */}
-                    <select
-                      onChange={(e) => {
-                        if (e.target.value) {
-                          handleBulkStatusUpdate(Number(e.target.value));
-                          e.target.value = "";
-                        }
-                      }}
-                      className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-slate-300"
-                    >
-                      <option value="">Bulk Status</option>
-                      <option value="200">Set 200 OK</option>
-                      <option value="201">Set 201 Created</option>
-                      <option value="204">Set 204 No Content</option>
-                      <option value="500">Set 500 Server Error</option>
-                    </select>
-
-                    <button
-                      onClick={handleBulkExport}
-                      className="p-1.5 bg-slate-900 text-slate-200 border border-slate-800 rounded-lg hover:bg-slate-800 text-xs flex items-center gap-1 cursor-pointer"
-                      title="Export Configurations"
-                    >
-                      <FileDown className="h-3.5 w-3.5" /> Export
-                    </button>
-
-                    <button
-                      onClick={handleBulkDelete}
-                      className="p-1.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-lg hover:bg-rose-500/20 text-xs flex items-center gap-1 cursor-pointer"
-                      title="Bulk Delete"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" /> Delete
-                    </button>
-                  </div>
-                </div>
-              )}
-
               {loading ? (
                 <div className="flex items-center justify-center py-6 text-slate-400">
                   <RefreshCw className="h-6 w-6 animate-spin text-indigo-500 mr-2" />
@@ -1153,7 +1118,6 @@ export default function Page() {
                 <div className="text-center py-8 bg-slate-950/40 rounded-xl border border-slate-800/60">
                   <Code className="h-8 w-8 text-slate-600 mx-auto mb-2" />
                   <p className="text-sm font-semibold text-slate-300">No active endpoints found</p>
-                  <p className="text-xs text-slate-500 mt-1">Define your first webhook on the left to start receiving webhooks!</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-3 max-h-[300px] overflow-y-auto font-sans pr-1">
@@ -1172,7 +1136,6 @@ export default function Page() {
                         )}
                       >
                         <div className="flex items-center gap-3">
-                          {/* Multi-select check */}
                           <input
                             type="checkbox"
                             checked={isChecked}
@@ -1184,15 +1147,14 @@ export default function Page() {
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
                               <span className="font-bold text-sm text-white">{wh.name}</span>
-                              <span className={clsx(
-                                "text-[10px] px-2 py-0.5 rounded font-mono font-bold uppercase",
-                                wh.method === "ALL" ? "bg-amber-500/10 text-amber-400" : "bg-indigo-500/10 text-indigo-400"
-                              )}>
-                                {wh.method}
-                              </span>
-                              {wh.cronSchedule && (
-                                <span className="text-[10px] px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20 font-bold flex items-center gap-1" title="Cron trigger schedule">
-                                  <Clock className="h-2.5 w-2.5" /> CRON: {wh.cronSchedule}
+                              {wh.basicAuthUsername && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold" title="Basic Auth Protected">
+                                  AUTH
+                                </span>
+                              )}
+                              {wh.asymmetricSigningEnabled && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-bold" title="Asymmetric Signed">
+                                  ED25519
                                 </span>
                               )}
                             </div>
@@ -1200,16 +1162,6 @@ export default function Page() {
                               <span className="font-mono bg-slate-950 p-1 rounded border border-slate-800/80 max-w-[150px] truncate sm:max-w-none">
                                 /api/webhooks/{wh.slug}
                               </span>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  copyToClipboard(`${origin}/api/webhooks/${wh.slug}`);
-                                }}
-                                className="text-slate-500 hover:text-white p-1 hover:scale-110 transition-transform"
-                                title="Copy Full URL"
-                              >
-                                <Copy className="h-3 w-3" />
-                              </button>
                             </div>
                           </div>
                         </div>
@@ -1218,24 +1170,12 @@ export default function Page() {
                           {isSelected && (
                             <span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse" />
                           )}
-                          {/* Limit Exceeded / Paused badge */}
-                          {wh.isLimitExceeded ? (
-                            <span className="text-[10px] px-2 py-0.5 rounded font-extrabold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                              PAUSED (Limit Exceeded)
-                            </span>
-                          ) : (
-                            renderHealthBadge(wh)
-                          )}
-                          <span className="text-[11px] bg-slate-950 px-2 py-1 rounded text-slate-400 border border-slate-800 font-bold font-mono">
-                            Returns {wh.status}
-                          </span>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               handleDeleteWebhook(wh.slug);
                             }}
                             className="p-1.5 bg-rose-500/10 text-rose-400 rounded-lg border border-rose-500/20 hover:bg-rose-500/20 transition-colors cursor-pointer"
-                            title="Delete Endpoint"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
@@ -1247,10 +1187,8 @@ export default function Page() {
               )}
             </div>
 
-            {/* Selected Webhook Log Inspector Console & Interactive Playground Tabs */}
             {selectedWebhook ? (
               <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden font-sans">
-                {/* Tab Navigation header */}
                 <div className="border-b border-slate-800 bg-slate-950/40 p-1 flex flex-wrap gap-1">
                   <button
                     onClick={() => setActiveTab("logs")}
@@ -1295,9 +1233,21 @@ export default function Page() {
                       </span>
                     )}
                   </button>
+
+                  <button
+                    onClick={() => setActiveTab("portal")}
+                    className={clsx(
+                      "flex items-center gap-2 px-4 py-2.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors cursor-pointer",
+                      activeTab === "portal"
+                        ? "bg-slate-900 text-white border border-slate-800"
+                        : "text-slate-400 hover:text-slate-200"
+                    )}
+                  >
+                    <Share2 className="h-4 w-4 text-sky-400" />
+                    Embed White-Label Portal
+                  </button>
                 </div>
 
-                {/* TAB 1: LOGS INSPECTOR */}
                 {activeTab === "logs" && (
                   <div>
                     <div className="p-6 border-b border-slate-800 bg-slate-900/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1305,19 +1255,14 @@ export default function Page() {
                         <h2 className="text-md font-bold text-white flex items-center gap-2">
                           Execution Inspector: {selectedWebhook.name}
                         </h2>
-                        <p className="text-xs text-slate-400 mt-1">
-                          Showing real-time execution logs for endpoint: <code className="text-indigo-300 font-mono">/api/webhooks/{selectedWebhook.slug}</code>
-                        </p>
                       </div>
 
                       <div className="flex items-center gap-2.5 self-start sm:self-center shrink-0">
                         <button
                           onClick={handleTestWebhook}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-all cursor-pointer"
-                          title="Simulate Request"
                         >
-                          <Play className="h-3 w-3" />
-                          Quick Test
+                          <Play className="h-3 w-3" /> Quick Test
                         </button>
                         <button
                           onClick={() => handleClearLogs(selectedWebhook.slug)}
@@ -1328,7 +1273,6 @@ export default function Page() {
                       </div>
                     </div>
 
-                    {/* Logs lists */}
                     <div className="p-6 space-y-4 max-h-[500px] overflow-y-auto">
                       {loadingLogs ? (
                         <div className="flex items-center justify-center py-12 text-slate-400">
@@ -1339,16 +1283,12 @@ export default function Page() {
                         <div className="text-center py-12 bg-slate-950/30 rounded-xl border border-slate-800/40">
                           <Clock className="h-8 w-8 text-slate-600 mx-auto mb-2" />
                           <p className="text-sm font-semibold text-slate-300">No requests captured yet</p>
-                          <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
-                            Use the "Quick Test" button above to send a mock request, or trigger it manually using curl/Postman.
-                          </p>
                         </div>
                       ) : (
                         <div className="space-y-3">
                           {logs.map((lg) => {
                             const isExpanded = expandedLogId === lg._id;
                             const isDlq = lg.deliveryStatus === "DLQ";
-                            const isDeduplicated = lg.isDuplicate;
                             return (
                               <div
                                 key={lg._id}
@@ -1357,16 +1297,12 @@ export default function Page() {
                                   isDlq ? "border-rose-500/30" : "border-slate-800"
                                 )}
                               >
-                                {/* Summary trigger line */}
                                 <div
                                   onClick={() => setExpandedLogId(isExpanded ? null : lg._id || null)}
                                   className="cursor-pointer p-4 flex items-center justify-between hover:bg-slate-900/60 transition-colors"
                                 >
                                   <div className="flex items-center gap-3">
-                                    <span className={clsx(
-                                      "text-[10px] px-2 py-0.5 rounded font-mono font-extrabold uppercase",
-                                      lg.method === "POST" ? "bg-emerald-500/10 text-emerald-400" : "bg-sky-500/10 text-sky-400"
-                                    )}>
+                                    <span className="text-[10px] px-2 py-0.5 rounded font-mono font-extrabold uppercase bg-emerald-500/10 text-emerald-400">
                                       {lg.method}
                                     </span>
                                     <div className="text-xs font-sans">
@@ -1377,16 +1313,6 @@ export default function Page() {
                                   </div>
 
                                   <div className="flex items-center gap-2">
-                                    {isDeduplicated && (
-                                      <span className="inline-flex items-center gap-1 text-[10px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 font-bold">
-                                        DEDUPLICATED
-                                      </span>
-                                    )}
-                                    {lg.emailNotified && (
-                                      <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10">
-                                        <Mail className="h-3 w-3" /> Email Alert
-                                      </span>
-                                    )}
                                     {lg.forwardedUrl && (
                                       <span className={clsx(
                                         "inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border font-bold",
@@ -1407,63 +1333,31 @@ export default function Page() {
                                   </div>
                                 </div>
 
-                                {/* Detailed request headers & body expander */}
                                 {isExpanded && (
                                   <div className="p-4 border-t border-slate-800 bg-slate-950/60 space-y-4 text-xs font-mono">
-                                    {/* Idempotency Key */}
-                                    {lg.idempotencyKeyUsed && (
-                                      <div className="bg-slate-900/60 p-2.5 rounded border border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
-                                        <span>Idempotency Key used: <code className="text-amber-400 font-mono">{lg.idempotencyKeyUsed}</code></span>
-                                        {isDeduplicated && <span className="text-amber-400 text-[10px] font-bold">Returned Cached response</span>}
-                                      </div>
-                                    )}
-
-                                    {/* Delay applied */}
-                                    {lg.delayAppliedMs && (
-                                      <div className="text-[11px] text-indigo-400 bg-indigo-500/5 px-2.5 py-1.5 rounded border border-indigo-500/10 flex items-center gap-1 font-sans font-bold">
-                                        <Clock className="h-3.5 w-3.5 animate-pulse" /> Artificial delay of {lg.delayAppliedMs}ms applied before response.
-                                      </div>
-                                    )}
-
-                                    {/* Query parameters */}
                                     {Object.keys(lg.query).length > 0 && (
                                       <div>
                                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 font-sans">Query Params</p>
-                                        <pre className="bg-slate-900/80 p-3 rounded border border-slate-800 text-slate-300 overflow-x-auto text-[11px] font-mono">
+                                        <pre className="bg-slate-900/80 p-3 rounded border border-slate-800 text-slate-300 overflow-x-auto text-[11px]">
                                           {JSON.stringify(lg.query, null, 2)}
                                         </pre>
                                       </div>
                                     )}
 
-                                    {/* Headers */}
                                     <div>
                                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 font-sans">HTTP Headers</p>
-                                      <pre className="bg-slate-900/80 p-3 rounded border border-slate-800 text-slate-300 overflow-x-auto text-[11px] font-mono max-h-[150px] overflow-y-auto">
+                                      <pre className="bg-slate-900/80 p-3 rounded border border-slate-800 text-slate-300 overflow-x-auto text-[11px] max-h-[150px] overflow-y-auto">
                                         {JSON.stringify(lg.headers, null, 2)}
                                       </pre>
                                     </div>
 
-                                    {/* Body payload */}
                                     <div>
                                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 font-sans">Payload (Request Body)</p>
-                                      <pre className="bg-slate-900/80 p-3 rounded border border-slate-800 text-slate-300 overflow-x-auto text-[11px] font-mono">
+                                      <pre className="bg-slate-900/80 p-3 rounded border border-slate-800 text-slate-300 overflow-x-auto text-[11px]">
                                         {lg.body || "(empty)"}
                                       </pre>
                                     </div>
 
-                                    {/* Transformation Output */}
-                                    {lg.transformedBody && (
-                                      <div>
-                                        <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-1 font-sans flex items-center gap-1">
-                                          <Sparkle className="h-3.5 w-3.5 text-indigo-400" /> Transformed Payload (Script Output)
-                                        </p>
-                                        <pre className="bg-indigo-950/20 p-3 rounded border border-indigo-500/20 text-slate-300 overflow-x-auto text-[11px] font-mono">
-                                          {lg.transformedBody}
-                                        </pre>
-                                      </div>
-                                    )}
-
-                                    {/* Proxy Deliveries attempts table */}
                                     {lg.forwardedUrl && lg.deliveries && (
                                       <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-4 font-sans space-y-2">
                                         <p className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">Proxy Forwarding Deliveries & Retries</p>
@@ -1492,21 +1386,6 @@ export default function Page() {
                                             </div>
                                           ))}
                                         </div>
-
-                                        {lg.deliveryStatus === "DLQ" && (
-                                          <div className="flex items-center justify-between bg-rose-500/10 border border-rose-500/20 p-3 rounded-lg mt-3">
-                                            <div>
-                                              <span className="text-xs text-rose-300 font-bold block">Delivery Failed. Enqueued to DLQ.</span>
-                                              <span className="text-[11px] text-slate-400">{lg.forwardResponse || "No error log."}</span>
-                                            </div>
-                                            <button
-                                              onClick={() => lg._id && handleRedriveDLQ(lg._id)}
-                                              className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
-                                            >
-                                              Re-drive Now
-                                            </button>
-                                          </div>
-                                        )}
                                       </div>
                                     )}
                                   </div>
@@ -1529,7 +1408,7 @@ export default function Page() {
                         Interactive API Docs & Live Playground
                       </h2>
                       <p className="text-xs text-slate-400 mt-1">
-                        Use this test harness to fire real webhooks to this endpoint right from the browser. You can modify custom headers, query params, and body payloads.
+                        Use this test harness to fire real webhooks to this endpoint right from the browser.
                       </p>
                     </div>
 
@@ -1579,9 +1458,7 @@ export default function Page() {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                      {/* Request inputs */}
                       <div className="space-y-4">
-                        {/* Headers */}
                         <div className="space-y-1.5">
                           <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                             HTTP Headers (JSON)
@@ -1594,7 +1471,6 @@ export default function Page() {
                           />
                         </div>
 
-                        {/* Query parameters */}
                         <div className="space-y-1.5">
                           <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                             URL Query Parameters (JSON)
@@ -1607,7 +1483,6 @@ export default function Page() {
                           />
                         </div>
 
-                        {/* Request Body Payload */}
                         <div className="space-y-1.5">
                           <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                             JSON Body Payload
@@ -1637,7 +1512,6 @@ export default function Page() {
                         </button>
                       </div>
 
-                      {/* Playground Response */}
                       <div className="space-y-4">
                         <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                           Playground Live Response Code
@@ -1655,19 +1529,9 @@ export default function Page() {
                                   {pgResponse.status}
                                 </span>
                               </span>
-                              <span className="text-[10px] text-slate-500">Live response from route</span>
                             </div>
 
                             <div className="p-4 space-y-4">
-                              {/* Response headers */}
-                              <div>
-                                <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Response Headers</p>
-                                <pre className="text-[10px] text-slate-300 bg-slate-900 p-2.5 rounded border border-slate-800/80 overflow-x-auto max-h-[120px] overflow-y-auto">
-                                  {JSON.stringify(pgResponse.headers, null, 2)}
-                                </pre>
-                              </div>
-
-                              {/* Response body */}
                               <div>
                                 <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Response Body</p>
                                 <pre className="text-[11px] text-slate-300 bg-slate-900 p-2.5 rounded border border-slate-800/80 overflow-x-auto max-h-[200px] overflow-y-auto">
@@ -1679,7 +1543,7 @@ export default function Page() {
                         ) : (
                           <div className="border border-dashed border-slate-800 rounded-xl p-12 text-center text-slate-500 text-xs">
                             <Activity className="h-8 w-8 text-slate-600 mx-auto mb-2 animate-pulse" />
-                            Once you trigger the webhook, the live client-side HTTP response will display here.
+                            Trigger the webhook to see live responses.
                           </div>
                         )}
                       </div>
@@ -1696,7 +1560,7 @@ export default function Page() {
                         Dead Letter Queue (DLQ) Deliveries
                       </h2>
                       <p className="text-xs text-slate-400 mt-1">
-                        Any forwarding deliveries that exhaust all automatic exponential backoff retry attempts end up in the DLQ. You can inspect failures and manually re-drive them.
+                        Any forwarding deliveries that exhaust all automatic retry attempts end up in the DLQ. You can inspect failures and manually re-drive them.
                       </p>
                     </div>
 
@@ -1707,7 +1571,7 @@ export default function Page() {
                     ) : dlqLogs.length === 0 ? (
                       <div className="border border-dashed border-slate-800 rounded-xl p-8 text-center text-slate-500 text-xs">
                         <CheckCircle className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
-                        No failed deliveries in DLQ! All proxy deliveries are operating perfectly.
+                        No failed deliveries in DLQ!
                       </div>
                     ) : (
                       <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1 font-sans">
@@ -1722,9 +1586,6 @@ export default function Page() {
                               </div>
                               <p className="text-[11px] text-slate-400">
                                 Target Proxy URL: <code className="text-indigo-400 font-mono text-[11px]">{log.forwardedUrl}</code>
-                              </p>
-                              <p className="text-[10px] text-slate-500">
-                                Triggered: {new Date(log.timestamp).toLocaleString()} • All {log.deliveries?.length || 3} retries failed
                               </p>
                               <div className="text-[11px] bg-rose-950/20 text-rose-300 p-2 rounded border border-rose-500/10 max-w-[500px] truncate">
                                 Error: {log.forwardResponse || "Network delivery timeout"}
@@ -1741,6 +1602,41 @@ export default function Page() {
                         ))}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {activeTab === "portal" && (
+                  <div className="p-6 space-y-4">
+                    <h2 className="text-md font-bold text-white flex items-center gap-2">
+                      <Share2 className="h-5 w-5 text-sky-400" />
+                      White-Label Self-Service Customer Portal Embed
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      Offer your SaaS end-users a self-service portal widget to view delivery logs, re-drive webhooks, and copy public verification keys.
+                    </p>
+
+                    <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3 font-mono text-xs">
+                      <div className="flex items-center justify-between text-indigo-400 font-bold">
+                        <span>Embed Iframe Code Snippet</span>
+                        <button
+                          onClick={() => copyToClipboard(`<iframe src="${origin}/portal?slug=${selectedWebhook.slug}&embed=true" width="100%" height="600px" frameborder="0"></iframe>`)}
+                          className="text-slate-400 hover:text-white"
+                        >
+                          Copy HTML
+                        </button>
+                      </div>
+                      <pre className="text-[11px] text-slate-300 bg-slate-900 p-3 rounded border border-slate-800 overflow-x-auto">
+                        {`<iframe src="${origin}/portal?slug=${selectedWebhook.slug}&embed=true" width="100%" height="600px" frameborder="0"></iframe>`}
+                      </pre>
+                    </div>
+
+                    <Link
+                      href={`/portal?slug=${selectedWebhook.slug}`}
+                      target="_blank"
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Open Customer Portal Demo Page
+                    </Link>
                   </div>
                 )}
               </div>
