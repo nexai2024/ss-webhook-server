@@ -11,7 +11,7 @@ import {
 
 describe("Verification Engine", () => {
   describe("HMAC Signature Verification", () => {
-    const secret = "whsec_testsecret123";
+    const secret = "test_hmac_secret_123";
     const body = JSON.stringify({ event: "checkout.completed", amount: 5000 });
 
     it("should verify Custom HMAC signature successfully", () => {

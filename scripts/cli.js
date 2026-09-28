@@ -5,9 +5,6 @@
  * Usage: node scripts/cli.js --slug my-slug --to http://localhost:3000/api/receive --host http://localhost:3000
  */
 
-const fs = require("node:fs");
-const path = require("node:path");
-
 const args = process.argv.slice(2);
 
 function getArg(flag, defaultValue) {

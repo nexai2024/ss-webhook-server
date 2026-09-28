@@ -905,7 +905,7 @@ export default function Page() {
                             id="hmacSecret"
                             name="hmacSecret"
                             type="password"
-                            placeholder="whsec_..."
+                            placeholder="secret_key_example"
                             className="w-full rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-white placeholder-slate-600"
                           />
                         </div>
@@ -1043,7 +1043,7 @@ export default function Page() {
                     id="notifySlackUrl"
                     name="notifySlackUrl"
                     type="url"
-                    placeholder="https://hooks.slack.com/services/..."
+                    placeholder="https://hooks.slack.com/services/example"
                     className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none"
                   />
                 </div>
@@ -1055,7 +1055,7 @@ export default function Page() {
                     id="notifyDiscordUrl"
                     name="notifyDiscordUrl"
                     type="url"
-                    placeholder="https://discord.com/api/webhooks/..."
+                    placeholder="https://discord.com/api/webhooks/example"
                     className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none"
                   />
                 </div>
@@ -1067,7 +1067,7 @@ export default function Page() {
                     id="notifyPagerDutyKey"
                     name="notifyPagerDutyKey"
                     type="text"
-                    placeholder="pd_routing_key_..."
+                    placeholder="pagerduty_routing_key_example"
                     className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none"
                   />
                 </div>
