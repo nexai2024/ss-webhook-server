@@ -21,6 +21,7 @@ import {
 } from "./lib/actions";
 import * as React from "react";
 import { toast } from "sonner";
+import { OnboardingGuide } from "./ui/onboarding-guide";
 import {
   Terminal,
   Plus,
@@ -106,6 +107,50 @@ export default function Page() {
   const [connectorApiKey, setConnectorApiKey] = React.useState("");
   const [connectorDatabaseId, setConnectorDatabaseId] = React.useState("");
   const [saasConnectors, setSaasConnectors] = React.useState<Array<{ id: string; type: any; name: string; enabled: boolean; targetUrl?: string; apiKey?: string; databaseId?: string }>>([]);
+
+  // Onboarding Guide State
+  const [showOnboardingGuide, setShowOnboardingGuide] = React.useState<boolean>(true);
+
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("endpoint_builders_guide_open");
+      if (saved === "false") {
+        setShowOnboardingGuide(false);
+      }
+    }
+  }, []);
+
+  const handleToggleOnboardingGuide = () => {
+    setShowOnboardingGuide((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("endpoint_builders_guide_open", String(next));
+      }
+      return next;
+    });
+  };
+
+  const handleDemoFill = () => {
+    const nameEl = document.getElementById("name") as HTMLInputElement | null;
+    const slugEl = document.getElementById("slug") as HTMLInputElement | null;
+    const bodyEl = document.getElementById("body") as HTMLTextAreaElement | null;
+    if (nameEl) nameEl.value = "Stripe Checkout Event Handler";
+    if (slugEl) slugEl.value = "stripe-checkout";
+    if (bodyEl) bodyEl.value = JSON.stringify({
+      id: "evt_3MvwE1LkdIwHu7ix1a1b2c3d",
+      object: "event",
+      type: "payment_intent.succeeded",
+      data: {
+        object: {
+          id: "pi_3MvwE1LkdIwHu7ix",
+          amount: 2000,
+          currency: "usd",
+          status: "succeeded"
+        }
+      }
+    }, null, 2);
+    toast.success("Demo endpoint configuration auto-filled! Click 'Create Endpoint' below to finalize.");
+  };
 
   // Tabs
   const [activeTab, setActiveTab] = React.useState<"logs" | "playground" | "dlq" | "portal">("logs");
@@ -642,6 +687,13 @@ export default function Page() {
 
           <div className="flex items-center gap-3">
             <button
+              onClick={handleToggleOnboardingGuide}
+              className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-semibold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 rounded-lg hover:bg-indigo-500/20 focus:outline-none transition-colors cursor-pointer"
+            >
+              <Sparkles className="h-4 w-4" />
+              {showOnboardingGuide ? "Guide Active" : "Getting Started Guide"}
+            </button>
+            <button
               onClick={fetchDashboardData}
               disabled={loading}
               className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-slate-300 bg-slate-900 border border-slate-800 rounded-lg hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors cursor-pointer"
@@ -651,6 +703,21 @@ export default function Page() {
             </button>
           </div>
         </header>
+
+        {/* Onboarding / Getting Started Interactive Guide */}
+        <section>
+          <OnboardingGuide
+            endpointsCount={analytics.totalEndpoints}
+            totalLogsCount={analytics.totalLogs}
+            hasSelectedEndpoint={!!selectedSlug}
+            activeTab={activeTab}
+            onDemoFill={handleDemoFill}
+            onTestWebhook={handleTestWebhook}
+            onSwitchTab={(tab) => setActiveTab(tab)}
+            isOpen={showOnboardingGuide}
+            onToggleOpen={handleToggleOnboardingGuide}
+          />
+        </section>
 
         {/* Dashboard Analytics summary counters */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
