@@ -1031,86 +1031,31 @@ export default function Page() {
                   <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
                     <ShieldCheck className="h-4 w-4" /> Asymmetric Key Signing (Ed25519/RSA)
                   </span>
-                  <ChevronDown className={clsx("h-4 w-4 text-slate-500 transition-transform", showAdvanced && "rotate-180")} />
-                </button>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={enableAsymmetric}
+                      onChange={(e) => setEnableAsymmetric(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                  </label>
+                </div>
 
-                {showAdvanced && (
-                  <div className="p-4 border-t border-slate-800 space-y-4 bg-slate-950/40 font-sans">
-                    {/* Multi-Destination Fan-Out Proxy Targets */}
-                    <div className="space-y-1.5">
-                      <label htmlFor="forwardUrls" className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider">
-                        Fan-Out Forwarding Target URLs (One per line)
-                      </label>
-                      <textarea
-                        id="forwardUrls"
-                        name="forwardUrls"
-                        rows={3}
-                        placeholder={`https://api.primary.com/webhooks\nhttps://api.secondary.com/webhooks`}
-                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 p-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
-                      />
-                    </div>
-
-                    {/* HMAC Signature Verification Settings */}
-                    <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-800 space-y-3">
-                      <span className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider block">
-                        🔒 HMAC Signature Verification
-                      </span>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <label htmlFor="hmacProvider" className="block text-[10px] text-slate-400 font-bold uppercase">Provider</label>
-                          <select
-                            id="hmacProvider"
-                            name="hmacProvider"
-                            defaultValue="custom"
-                            className="w-full rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-white"
-                          >
-                            <option value="custom">Custom (X-Signature)</option>
-                            <option value="stripe">Stripe (Stripe-Signature)</option>
-                            <option value="github">GitHub (X-Hub-Signature-256)</option>
-                            <option value="shopify">Shopify (X-Shopify-Hmac-SHA256)</option>
-                            <option value="twilio">Twilio (X-Twilio-Signature)</option>
-                          </select>
-                        </div>
-                        <div className="space-y-1">
-                          <label htmlFor="hmacSecret" className="block text-[10px] text-slate-400 font-bold uppercase">Secret Key</label>
-                          <input
-                            id="hmacSecret"
-                            name="hmacSecret"
-                            type="password"
-                            placeholder="secret_key_example"
-                            className="w-full rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-white placeholder-slate-600"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* JSON Schema Validation */}
-                    <div className="space-y-1.5">
-                      <label htmlFor="jsonSchema" className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider">
-                        JSON Schema Structural Validation
-                      </label>
-                      <textarea
-                        id="jsonSchema"
-                        name="jsonSchema"
-                        rows={3}
-                        placeholder={`{ "required": ["event", "data"], "properties": { "event": { "type": "string" } } }`}
-                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 p-2 text-[10px] font-mono text-slate-300 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-
-                    {/* Conditional Payload Filtering Rules */}
-                    <div className="space-y-1.5">
-                      <label htmlFor="filterRules" className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider">
-                        Conditional Payload Filter Rule
-                      </label>
-                      <input
-                        id="filterRules"
-                        name="filterRules"
-                        type="text"
-                        placeholder={`{ "event": "payment.succeeded" } or key=value`}
-                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
-                      />
-                    </div>
+                {enableAsymmetric && (
+                  <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800">
+                    <label className="text-[11px] text-slate-300 font-bold uppercase">Signature Algorithm</label>
+                    <select
+                      value={asymmetricType}
+                      onChange={(e) => setAsymmetricType(e.target.value as any)}
+                      className="w-full rounded border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-white"
+                    >
+                      <option value="ed25519">Ed25519 (Recommended)</option>
+                      <option value="rsa">RSA-SHA256 (Legacy)</option>
+                    </select>
+                  </div>
+                )}
+              </div>
 
               {/* FEATURE 2: 3RD-PARTY SAAS CONNECTORS */}
               <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
@@ -1166,6 +1111,8 @@ export default function Page() {
                   >
                     + Add SaaS Action Connector
                   </button>
+                </div>
+              </div>
 
               {/* Alert Notifications (Email, Slack, Discord, PagerDuty) */}
               <div className="space-y-3 bg-slate-950/40 p-3.5 rounded-lg border border-slate-800 relative">
