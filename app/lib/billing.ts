@@ -1,3 +1,5 @@
+import type { Db } from "mongodb";
+
 /**
  * Clerk Billing plan/feature slugs — must match Dashboard → Billing → Plans.
  * Source of truth pulled from the linked Endpoint Builders instance.

@@ -21,15 +21,17 @@ export async function POST(req: NextRequest) {
     const db = await getDb();
     const receivedAt = new Date();
 
+    const eventType = evt.type as string;
+
     if (
-      evt.type === "subscription.created" ||
-      evt.type === "subscription.updated" ||
-      evt.type === "subscription.active" ||
-      evt.type === "subscription.pastDue" ||
-      evt.type === "subscription.canceled" ||
-      evt.type === "subscription.deleted"
+      eventType === "subscription.created" ||
+      eventType === "subscription.updated" ||
+      eventType === "subscription.active" ||
+      eventType === "subscription.pastDue" ||
+      eventType === "subscription.canceled" ||
+      eventType === "subscription.deleted"
     ) {
-      const data = evt.data as {
+      const data = evt.data as unknown as {
         id: string;
         status?: string;
         payer?: { user_id?: string; organization_id?: string };
@@ -38,7 +40,7 @@ export async function POST(req: NextRequest) {
 
       const entityId = data.payer?.organization_id ?? data.payer?.user_id;
       const plan = data.items?.[0]?.plan?.slug;
-      const isCanceled = evt.type === "subscription.canceled" || evt.type === "subscription.deleted";
+      const isCanceled = eventType === "subscription.canceled" || eventType === "subscription.deleted";
 
       await db.collection("subscriptions").updateOne(
         { subscriptionId: data.id },
@@ -47,8 +49,8 @@ export async function POST(req: NextRequest) {
             subscriptionId: data.id,
             entityId: entityId ?? null,
             plan: plan ?? null,
-            status: isCanceled ? "canceled" : (data.status ?? evt.type),
-            eventType: evt.type,
+            status: isCanceled ? "canceled" : (data.status ?? eventType),
+            eventType,
             updatedAt: receivedAt,
           },
           $setOnInsert: { createdAt: receivedAt },
@@ -58,13 +60,13 @@ export async function POST(req: NextRequest) {
     }
 
     if (
-      evt.type === "subscriptionItem.canceled" ||
-      evt.type === "subscriptionItem.ended" ||
-      evt.type === "subscriptionItem.deleted" ||
-      evt.type === "subscriptionItem.pastDue" ||
-      evt.type === "subscriptionItem.active"
+      eventType === "subscriptionItem.canceled" ||
+      eventType === "subscriptionItem.ended" ||
+      eventType === "subscriptionItem.deleted" ||
+      eventType === "subscriptionItem.pastDue" ||
+      eventType === "subscriptionItem.active"
     ) {
-      const data = evt.data as {
+      const data = evt.data as unknown as {
         id: string;
         status?: string;
         payer?: { user_id?: string; organization_id?: string };
@@ -77,12 +79,12 @@ export async function POST(req: NextRequest) {
         itemId: data.id,
         entityId: entityId ?? null,
         plan: data.plan?.slug ?? null,
-        status: data.status ?? evt.type,
-        eventType: evt.type,
+        status: data.status ?? eventType,
+        eventType,
         createdAt: receivedAt,
       });
 
-      if (entityId && (evt.type === "subscriptionItem.canceled" || evt.type === "subscriptionItem.ended" || evt.type === "subscriptionItem.deleted")) {
+      if (entityId && (eventType === "subscriptionItem.canceled" || eventType === "subscriptionItem.ended" || eventType === "subscriptionItem.deleted")) {
         await db.collection("subscriptions").updateOne(
           { entityId, plan: data.plan?.slug },
           {
